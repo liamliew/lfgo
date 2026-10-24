@@ -101,6 +101,31 @@ API key.
   and the Worker rejects them even if a token is presented.
 - **Safari:** has no `chrome.identity`, so the Safari build signs in in a tab instead (see below).
 
+## Install for the whole Google Workspace (free)
+
+No Chrome Web Store account needed. The release workflow can sign the extension and publish
+an update file; the Admin console then installs it for everyone and keeps it updated.
+The extension keeps its current id, so the Worker and Supabase settings stay as they are.
+
+One-time setup:
+1. Add the signing key as a repository secret named **EXT_PRIVATE_KEY**: the full text of the
+   `.pem` file for this extension (GitHub: Settings > Secrets and variables > Actions).
+   Keep the file safe: whoever has it can publish updates as this extension. It is not in
+   this repository.
+2. Bump `version` in `manifest.json` and push. The release then also contains
+   `lfc-tools-<version>.crx`, and `update/updates.xml` is updated on this branch.
+3. Google Admin console > Devices > Chrome > Apps & extensions > Users & browsers > pick the
+   organisational unit > **+** > *Add Chrome app or extension by ID* > *From a custom URL*:
+   - Extension ID: `bfdicajogngofgmdnilbhmpliocicbpi`
+   - URL: `https://raw.githubusercontent.com/liamliew/lfgo/claude/links-extension/update/updates.xml`
+   - Installation policy: **Force install** (optionally pin to the toolbar).
+
+Try it on a small test organisational unit first. Google's rules for installing extensions
+from outside the Web Store differ by platform: on Windows and Mac the browser generally has
+to be managed (for example enrolled in Chrome Browser Cloud Management, which is free), so
+check the current Admin console help before rolling it out to everyone. Updates arrive
+automatically after each version bump.
+
 ## Safari
 
 Safari needs the extension wrapped in a small Mac app, which only Xcode on a Mac can build.
