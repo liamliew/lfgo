@@ -12,3 +12,12 @@ xcrun safari-web-extension-converter dist/safari-extension \
   --bundle-identifier com.lfcrea.lfctools \
   --project-location dist/safari-xcode \
   --macos-only --swift --copy-resources --no-prompt --force "$@"
+
+# The converter names the app after the app name (com.lfcrea.LFC-Tools) but the extension
+# after --bundle-identifier (com.lfcrea.lfctools.Extension). Xcode refuses an extension whose
+# id is not prefixed by its app's, so make the app's id the prefix.
+grep -rl "com.lfcrea.LFC-Tools" dist/safari-xcode 2>/dev/null | while IFS= read -r f; do
+  perl -pi -e 's/com\.lfcrea\.LFC-Tools/com.lfcrea.lfctools/g' "$f"
+done
+echo "Bundle identifiers now:"
+grep -rhoE "PRODUCT_BUNDLE_IDENTIFIER = [^;]+" dist/safari-xcode | sort -u
