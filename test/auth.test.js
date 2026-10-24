@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  AuthError, challengeFor, connect, getAccessToken, getSession, loadAuthConfig, randomVerifier, signInWithGoogle, signOut,
+  AuthError, AUTH_MESSAGE, challengeFor, connect, getAccessToken, getSession, loadAuthConfig, launchInTab, randomVerifier, signInWithGoogle, signOut, tabRedirectUrl,
 } from "../auth.js";
 import { ApiError, createClient, describeError } from "../shared.js";
 
@@ -231,5 +231,95 @@ describe("connect and the client", () => {
     assert.match(describeError(new ApiError(401, "wrong_domain", "Only @lfcrea.com accounts can use this"), "b"), /lfcrea\.com/);
     assert.match(describeError(new ApiError(503, "auth_unavailable", "x"), "b"), /Try again/);
     assert.match(describeError(new ApiError(401, "sign_in_disabled", "x"), "b"), /API key/);
+  });
+});
+
+describe("sign-in in a tab (Safari)", () => {
+  const DONE = "https://go.lfcrea.com/auth/done";
+  function fakeBrowser() {
+    const msg = new Set();
+    const removed = new Set();
+    const closed = [];
+    return {
+      created: [],
+      closed,
+      tabs: {
+        create: async (o) => { this_.created.push(o); return { id: 7 }; },
+        remove: async (id) => void closed.push(id),
+        onRemoved: { addListener: (f) => removed.add(f), removeListener: (f) => removed.delete(f) },
+      },
+      runtime: { onMessage: { addListener: (f) => msg.add(f), removeListener: (f) => msg.delete(f) } },
+      send: (m, sender) => [...msg].forEach((f) => f(m, sender)),
+      closeTab: (id) => [...removed].forEach((f) => f(id)),
+      listeners: () => msg.size + removed.size,
+    };
+  }
+  let this_;
+  const setup = () => (this_ = fakeBrowser());
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+
+  it("builds the return address from the short domain", () => {
+    assert.equal(tabRedirectUrl("https://go.lfcrea.com"), DONE);
+    assert.equal(tabRedirectUrl("https://go.lfcrea.com/x/"), DONE);
+  });
+
+  it("resolves with the reported address, closes the tab and removes its listeners", async () => {
+    const b = setup();
+    const p = launchInTab("https://auth.example/authorize", DONE, b);
+    await tick();
+    b.send({ type: AUTH_MESSAGE, url: `${DONE}?code=abc` }, { tab: { id: 7 } });
+    assert.equal(await p, `${DONE}?code=abc`);
+    assert.deepEqual(b.created, [{ url: "https://auth.example/authorize", active: true }]);
+    assert.deepEqual(b.closed, [7]);
+    assert.equal(b.listeners(), 0);
+  });
+
+  it("ignores other tabs, other message types and addresses elsewhere", async () => {
+    const b = setup();
+    const p = launchInTab("https://auth.example/authorize", DONE, b);
+    await tick();
+    b.send({ type: AUTH_MESSAGE, url: `${DONE}?code=evil` }, { tab: { id: 99 } });
+    b.send({ type: "other", url: `${DONE}?code=evil` }, { tab: { id: 7 } });
+    b.send({ type: AUTH_MESSAGE, url: "https://evil.example/auth/done?code=evil" }, { tab: { id: 7 } });
+    b.send({ type: AUTH_MESSAGE, url: `${DONE}?code=good` }, { tab: { id: 7 } });
+    assert.equal(await p, `${DONE}?code=good`);
+  });
+
+  it("rejects as closed when the user closes the tab, without trying to close it again", async () => {
+    const b = setup();
+    const p = launchInTab("https://auth.example/authorize", DONE, b);
+    await tick();
+    b.closeTab(7);
+    await assert.rejects(p, /closed/);
+    assert.deepEqual(b.closed, []);
+    assert.equal(b.listeners(), 0);
+  });
+
+  it("times out", async () => {
+    const b = setup();
+    await assert.rejects(launchInTab("https://auth.example/authorize", DONE, { ...b, timeoutMs: 5 }), /timed out/);
+    assert.equal(b.listeners(), 0);
+  });
+
+  it("signInWithGoogle uses the tab flow and the /auth/done address when there is no identity API", async () => {
+    const b = setup();
+    const a = area({ base: "https://go.lfcrea.com" });
+    const calls = { fetch: [] };
+    const fetchImpl = async (url, init) => {
+      calls.fetch.push({ url, body: JSON.parse(init.body) });
+      return respond(200, { access_token: jwt({ email: "sam@lfcrea.com" }), refresh_token: "r", expires_in: 3600 });
+    };
+    const p = signInWithGoogle({
+      area: a, config: CFG, fetchImpl, now: () => NOW,
+      launch: (opts) => launchInTab(opts.url, tabRedirectUrl("https://go.lfcrea.com"), b),
+      redirectUrl: tabRedirectUrl("https://go.lfcrea.com"),
+    });
+    while (!b.created.length) await tick();
+    const url = new URL(b.created[0].url);
+    assert.equal(url.searchParams.get("redirect_to"), DONE);
+    b.send({ type: AUTH_MESSAGE, url: `${DONE}?code=the-code` }, { tab: { id: 7 } });
+    const s = await p;
+    assert.equal(s.email, "sam@lfcrea.com");
+    assert.equal(calls.fetch[0].body.auth_code, "the-code");
   });
 });

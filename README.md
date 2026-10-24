@@ -99,7 +99,46 @@ API key.
   and the domain rules are in `worker/LF-ID-SETUP.md` on branch `claude/links-worker`.
 - **Domain:** only `@lfcrea.com` Google accounts get in: the extension refuses others,
   and the Worker rejects them even if a token is presented.
-- **Safari:** `chrome.identity` may not be available there; Phase 4 will check.
+- **Safari:** has no `chrome.identity`, so the Safari build signs in in a tab instead (see below).
+
+## Safari
+
+Safari needs the extension wrapped in a small Mac app, which only Xcode on a Mac can build.
+Everything else is prepared here:
+
+1. **Get the Xcode project.** Either run `scripts/safari-convert.sh` on a Mac with Xcode
+   (and Node), or open the **Safari build** workflow's latest run on GitHub (Actions tab)
+   and download its artifact `lfc-tools-safari-xcode-project`.
+2. Open `LFC Tools.xcodeproj` in Xcode, pick your team under *Signing & Capabilities*
+   (a free Apple ID works for your own Mac), and press **Run**.
+3. In Safari: **Settings > Extensions**, tick LFC Tools, and under *Permissions* choose
+   **Always Allow on Every Website** (or at least for `go.lfcrea.com` and the sites you shorten).
+   For an unsigned build also enable **Develop > Allow Unsigned Extensions** (it resets on
+   every Safari restart).
+4. One-time server step: add `https://go.lfcrea.com/auth/done` to the LF Creative
+   Supabase project's Redirect URLs (see `worker/LF-ID-SETUP.md` on branch
+   `claude/links-worker`), and deploy the Worker at or after the "/auth/done" change.
+
+How the Safari build differs (`scripts/build-safari.mjs` produces it from this same code):
+- **Sign-in runs in a tab** because Safari has no `identity` API (Apple: "initiate an OAuth
+  flow in a new tab"). It returns to the Worker's static `/auth/done` page; a small content
+  script (`auth-bridge.js`, Safari build only) reports that address to the extension and the
+  tab closes. Same PKCE flow and domain checks as Chrome.
+- **Host access to the short domain** instead of the Worker's `ALLOWED_ORIGINS` list,
+  because a Safari extension's address is different on every install.
+- No `key`, no `identity`, background declared as a non-persistent script.
+- Safari asks permission per website, so on a site you have not allowed the popup says it
+  can't read the page's address.
+
+**Not verified yet:** the Safari build has not been run in Safari. It was written against
+Apple's compatibility guide, and the tests cover the manifest, the file list and the tab
+flow with a fake browser. Things to check first on a Mac: that sign-in completes and the tab
+closes; that API calls to `go.lfcrea.com` work (if Safari still blocks them with CORS, say
+so and the Worker will be given a rule for Safari extensions); the keyboard shortcut; and
+that copying to the clipboard works from the popup.
+
+Sharing it with the team needs the paid Apple Developer Program (TestFlight, the Mac App
+Store, or a Developer ID signed and notarised app).
 
 ## PIN locks: what you need to know
 

@@ -25,7 +25,7 @@ export function normalizeBase(input) {
 /** The extension can only shorten ordinary web pages. */
 export function checkTabUrl(url) {
   if (!url) {
-    return { ok: false, reason: "This page can't be shortened (the browser does not share its address)." };
+    return { ok: false, reason: "This page can't be shortened (the browser does not share its address). In Safari, allow LFC Tools on this website: Safari > Settings > Extensions." };
   }
   let parsed;
   try {

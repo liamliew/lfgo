@@ -7,6 +7,11 @@
 // Refreshing uses POST .../token?grant_type=refresh_token {refresh_token}. Refresh tokens
 // are single-use, so refreshes are serialised across the popup and manage page with
 // navigator.locks. Sessions live in chrome.storage.local (never storage.sync).
+//
+// Safari has no chrome.identity (Apple: "initiate an OAuth flow in a new tab"). There the
+// same flow runs in an ordinary tab and returns to <short domain>/auth/done, a static page
+// served by the Worker; auth-bridge.js (a content script in the Safari build only) reports
+// that page's address back to the extension and the tab is closed.
 
 import { ALLOWED_DOMAIN, SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from "./config.js";
 import { createClient, loadSettings } from "./shared.js";
@@ -28,6 +33,64 @@ export async function loadAuthConfig(area = chrome.storage.local) {
   const url = (o.supabaseUrl || SUPABASE_URL).trim().replace(/\/+$/, "");
   const key = (o.supabaseKey || SUPABASE_PUBLISHABLE_KEY).trim();
   return { url, key, enabled: Boolean(url && key), domain: ALLOWED_DOMAIN };
+}
+
+// --------------------------------------------------------- sign-in in a tab (Safari)
+
+export const AUTH_MESSAGE = "lfc-auth-result";
+export const AUTH_DONE_PATH = "/auth/done";
+const TAB_SIGN_IN_TIMEOUT_MS = 5 * 60 * 1000;
+
+/** True where chrome.identity.launchWebAuthFlow exists (Chrome, Edge, Brave; not Safari). */
+export const hasIdentityApi = () => typeof chrome !== "undefined" && typeof chrome.identity?.launchWebAuthFlow === "function";
+
+/** Where the tab flow returns to: the Worker's landing page on the configured short domain. */
+export const tabRedirectUrl = (base) => `${new URL(base).origin}${AUTH_DONE_PATH}`;
+
+/**
+ * Opens `url` in a tab and resolves with the address the flow ended on, which is the first
+ * report from that very tab (sender checked) of an address beginning with `doneUrl`.
+ * Rejects if the tab is closed first or nothing happens for five minutes.
+ */
+export function launchInTab(url, doneUrl, env = {}) {
+  const tabs = env.tabs ?? chrome.tabs;
+  const runtime = env.runtime ?? chrome.runtime;
+  const timeoutMs = env.timeoutMs ?? TAB_SIGN_IN_TIMEOUT_MS;
+  return new Promise((resolve, reject) => {
+    let tabId = null;
+    let timer = null;
+    let settled = false;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      runtime.onMessage.removeListener(onMessage);
+      tabs.onRemoved.removeListener(onRemoved);
+      if (tabId !== null) Promise.resolve(tabs.remove(tabId)).catch(() => {});
+      fn(value);
+    };
+    const onMessage = (msg, sender) => {
+      if (msg?.type !== AUTH_MESSAGE || tabId === null || sender?.tab?.id !== tabId) return;
+      if (typeof msg.url !== "string" || !msg.url.startsWith(doneUrl)) return;
+      finish(resolve, msg.url);
+    };
+    const onRemoved = (id) => {
+      if (id === tabId) {
+        tabId = null; // already gone: nothing to close
+        finish(reject, new Error("The sign-in tab was closed."));
+      }
+    };
+    runtime.onMessage.addListener(onMessage);
+    tabs.onRemoved.addListener(onRemoved);
+    timer = setTimeout(() => finish(reject, new Error("Sign-in timed out and was cancelled.")), timeoutMs);
+    Promise.resolve(tabs.create({ url, active: true })).then(
+      (tab) => {
+        tabId = tab.id;
+        if (settled) tabs.remove(tab.id)?.catch?.(() => {});
+      },
+      (e) => finish(reject, e),
+    );
+  });
 }
 
 // --------------------------------------------------------------------- PKCE
@@ -114,8 +177,9 @@ export async function signInWithGoogle(deps = {}) {
   if (!cfg.enabled) throw new AuthError("not_configured", "Google sign-in is not set up in this version yet.");
   const fetchImpl = deps.fetchImpl ?? ((...a) => fetch(...a));
   const now = deps.now ?? (() => Date.now());
-  const launch = deps.launch ?? ((opts) => chrome.identity.launchWebAuthFlow(opts));
-  const redirectUrl = deps.redirectUrl ?? chrome.identity.getRedirectURL();
+  const native = hasIdentityApi();
+  const redirectUrl = deps.redirectUrl ?? (native ? chrome.identity.getRedirectURL() : tabRedirectUrl((await loadSettings(area)).base));
+  const launch = deps.launch ?? (native ? (opts) => chrome.identity.launchWebAuthFlow(opts) : (opts) => launchInTab(opts.url, redirectUrl));
 
   const verifier = randomVerifier(deps.rng);
   const params = new URLSearchParams({

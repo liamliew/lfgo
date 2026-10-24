@@ -1,5 +1,5 @@
 import {
-  AuthError, connect, getAccessToken, getSession, loadAuthConfig, signInWithGoogle, signOut,
+  AuthError, connect, hasIdentityApi, getAccessToken, getSession, loadAuthConfig, signInWithGoogle, signOut,
 } from "./auth.js";
 import {
   DEFAULT_BASE, createClient, describeError, loadSettings, normalizeBase, removeApiKey, saveSettings,
@@ -45,8 +45,9 @@ async function load() {
   savedKey = s.apiKey;
   reflectKey();
   await renderAccount();
-  $("origin").textContent = `chrome-extension://${chrome.runtime.id}`;
-  $("redirect-url").textContent = chrome.identity.getRedirectURL();
+  // chrome-extension://<id> in Chrome, safari-web-extension://<uuid> in Safari.
+  $("origin").textContent = location.origin;
+  $("redirect-url").textContent = hasIdentityApi() ? chrome.identity.getRedirectURL() : tabRedirectUrl(s.base);
 }
 
 // ---------------------------------------------------------------- Google sign-in

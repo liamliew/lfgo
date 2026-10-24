@@ -54,9 +54,9 @@
 
     <section class="origin">
       <h2>Server setup</h2>
-      <p class="muted">Add this address to <code>ALLOWED_ORIGINS</code> in the Worker's <code>wrangler.jsonc</code> and redeploy. Without it the browser blocks this extension's requests.</p>
+      <p class="muted">Add this address to <code>ALLOWED_ORIGINS</code> in the Worker's <code>wrangler.jsonc</code> and redeploy. Without it the browser blocks this extension's requests. (Safari builds skip this: they have host access to the short domain instead, and the address changes per install.)</p>
       <div class="copy-row"><code id="origin"></code><button id="copy-origin" class="btn small" type="button">Copy</button></div>
-      <p class="muted">For Google sign-in, add this to the LF ID Supabase project under Authentication, URL Configuration, Redirect URLs.</p>
+      <p class="muted">For Google sign-in, add this to the LF Creative Supabase project under Authentication, URL Configuration, Redirect URLs.</p>
       <div class="copy-row"><code id="redirect-url"></code><button id="copy-redirect" class="btn small" type="button">Copy</button></div>
     </section>
 

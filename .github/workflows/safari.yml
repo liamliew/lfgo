@@ -1,0 +1,51 @@
+name: Safari build
+
+# Converts the extension for Safari on a Mac runner and checks that the Xcode project builds.
+# The converted project and the Safari extension folder are attached to the run as an artifact:
+# download it on a Mac, open "LFC Tools.xcodeproj" in Xcode and press Run.
+# Signing (needed to share it beyond your own Mac) is not done here.
+on:
+  push:
+    branches:
+      - claude/links-extension
+    paths:
+      - "scripts/**"
+      - "auth-bridge.js"
+      - "manifest.json"
+      - "*.js"
+      - "*.html"
+      - ".github/workflows/safari.yml"
+  workflow_dispatch:
+
+jobs:
+  safari:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test
+        run: npm test
+
+      - name: Convert for Safari
+        run: scripts/safari-convert.sh --no-open
+
+      - name: Build (unsigned)
+        run: |
+          project="$(ls -d dist/safari-xcode/*/*.xcodeproj | head -n 1)"
+          echo "Project: $project"
+          xcodebuild -list -project "$project"
+          scheme="$(xcodebuild -list -json -project "$project" | node -e 'const s=JSON.parse(require("fs").readFileSync(0,"utf8")).project.schemes; console.log(s.find(x=>!/extension/i.test(x))??s[0])')"
+          echo "Scheme: $scheme"
+          xcodebuild -project "$project" -scheme "$scheme" -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lfc-tools-safari-xcode-project
+          path: |
+            dist/safari-xcode
+            dist/safari-extension
