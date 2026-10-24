@@ -1,4 +1,4 @@
-import { corsHeaders, checkAuth, apiError, htmlPage, json, pinPage, readJson, withHeaders } from "./http";
+import { authenticate, corsHeaders, apiError, htmlPage, json, pinPage, readJson, withHeaders } from "./http";
 import type { GuardStatus } from "./guard";
 import { PIN_RE, makeLock, verifyPin } from "./pin";
 import {
@@ -279,8 +279,8 @@ export default {
         // Preflight carries no credentials; only allow-listed origins get CORS headers.
         return new Response(null, { status: cors["access-control-allow-origin"] ? 204 : 403, headers: cors });
       }
-      const denied = await checkAuth(request, env);
-      if (denied) return withHeaders(denied, cors);
+      const caller = await authenticate(request, env);
+      if (caller instanceof Response) return withHeaders(caller, cors);
       try {
         return withHeaders(await handleApi(request, env, path), cors);
       } catch (err) {

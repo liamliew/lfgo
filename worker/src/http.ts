@@ -1,3 +1,4 @@
+import { authEnabled, looksLikeJwt, verifyAccessToken, type UserIdentity } from "./auth";
 import type { Env } from "./types";
 
 export function json(data: unknown, status = 200, headers: HeadersInit = {}): Response {
@@ -25,15 +26,34 @@ async function safeEqual(a: string, b: string): Promise<boolean> {
   return diff === 0;
 }
 
-/** Returns an error Response, or null when the request carries a valid key. */
-export async function checkAuth(request: Request, env: Env): Promise<Response | null> {
-  if (!env.API_KEY) return apiError(500, "Server is missing the API_KEY secret", "misconfigured");
-  const bearer = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
-  const presented = request.headers.get("x-api-key") || bearer || "";
+export type Caller = { kind: "key" } | UserIdentity;
+
+/**
+ * Who is calling /api/*? Either the shared API key (X-API-Key, or Authorization: Bearer
+ * with a non-JWT value) or a signed-in @lfcrea.com Google user (Authorization: Bearer
+ * with a Supabase access token). Returns an error Response when neither checks out.
+ */
+export async function authenticate(request: Request, env: Env): Promise<Caller | Response> {
+  const bearer = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
+  const headerKey = request.headers.get("x-api-key")?.trim();
+
+  if (!headerKey && bearer && looksLikeJwt(bearer)) {
+    const result = await verifyAccessToken(bearer, env);
+    if (result.ok) return result.identity;
+    return apiError(result.status, result.message, result.code);
+  }
+
+  const presented = headerKey || bearer || "";
+  if (!env.API_KEY) {
+    // No API key configured: that is only fine if Google sign-in is the way in.
+    return authEnabled(env)
+      ? apiError(401, "Sign in with your Google account", "unauthorized")
+      : apiError(500, "Server is missing the API_KEY secret", "misconfigured");
+  }
   if (!presented || !(await safeEqual(presented, env.API_KEY))) {
     return apiError(401, "Missing or invalid API key", "unauthorized");
   }
-  return null;
+  return { kind: "key" };
 }
 
 function allowedOrigins(env: Env): string[] {

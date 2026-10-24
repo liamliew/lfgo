@@ -20,7 +20,12 @@
     // Chrome extension on branch claude/links-extension (its id is fixed by
     // the "key" in its manifest.json). The wacrm server calls the API
     // server-side, so it does not need to be listed.
-    "ALLOWED_ORIGINS": "chrome-extension://bfdicajogngofgmdnilbhmpliocicbpi"
+    "ALLOWED_ORIGINS": "chrome-extension://bfdicajogngofgmdnilbhmpliocicbpi",
+    // Google sign-in ("LF ID"). Fill SUPABASE_URL with the Supabase project's URL
+    // (https://<ref>.supabase.co) to turn it on; empty leaves only the API key.
+    "SUPABASE_URL": "",
+    // Only Google accounts on this email domain are let in.
+    "ALLOWED_EMAIL_DOMAIN": "lfcrea.com"
   },
 
   // Counts wrong PIN guesses for PIN-locked links with strong consistency

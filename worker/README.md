@@ -14,7 +14,9 @@ Personal URL shortener: a Cloudflare Worker backed by Workers KV, served on
 | `PATCH /api/links/:code` | key | `{newCode?, url?, title?, pin?}`: rename, change destination, title and/or PIN (`""` clears the title; `pin: null` removes the lock) |
 | `DELETE /api/links/:code` | key | Delete |
 
-Auth: send the key as `X-API-Key: <key>` or `Authorization: Bearer <key>`.
+Auth: either the shared API key (`X-API-Key: <key>` or `Authorization: Bearer <key>`)
+or a Google sign-in: `Authorization: Bearer <access token>` from the LF ID
+Supabase project (see "Google sign-in (LF ID)" below).
 Errors are `{"error": "...", "code": "..."}`; `code` is `alias_taken` (409),
 `invalid_alias` (400), `not_found` (404), `unauthorized` (401).
 
@@ -27,6 +29,33 @@ the shortener's own host.
 
 `title` is optional free text (page title), whitespace-collapsed and capped at
 140 characters.
+
+## Google sign-in (LF ID)
+
+Team members sign in with their `@lfcrea.com` Google account instead of pasting an
+API key. A separate Supabase project ("LF ID") runs the Google login; this Worker
+only **verifies** the access tokens it issues:
+
+- Signature checked against the project's public keys at
+  `<SUPABASE_URL>/auth/v1/.well-known/jwks.json` (cached 5 minutes; refetched, at
+  most every 30 s, when a token names an unknown key). Only ES256/RS256 are
+  accepted, never HS256 or `none`. This needs the project to use **asymmetric JWT
+  signing keys** (Supabase dashboard, Settings -> JWT Keys); the endpoint returns no
+  keys otherwise.
+- Claims checked: issuer = `<SUPABASE_URL>/auth/v1`, audience and role
+  `authenticated`, not expired (30 s skew), email on `ALLOWED_EMAIL_DOMAIN`
+  (default `lfcrea.com`, exact match), `app_metadata.provider` = `google` and a
+  verified email, so email+password sign-ups cannot get in even with a matching
+  address.
+- Errors: 401 with a `code` (`invalid_token`, `token_expired`, `wrong_domain`,
+  `wrong_provider`, `sign_in_disabled`); 503 `auth_unavailable` if the key endpoint
+  cannot be reached (clients stay signed in and can retry).
+- Turning it on: set `SUPABASE_URL` in `wrangler.jsonc` (a public value, not a
+  secret) and deploy. Until then Bearer JWTs get `sign_in_disabled` and only the
+  API key works. The API key keeps working alongside, as the admin / server-to-server
+  route; with sign-in on you may remove the `API_KEY` secret if you no longer want it.
+- Every signed-in user currently has the same access as the API key (everyone sees
+  and manages all links). Who created a link is not recorded yet.
 
 ## PIN locks
 
