@@ -27,6 +27,14 @@ That is the extension's sign-in return address (also shown on the extension's Se
 page, under "Server setup"; its id is fixed by the `key` in its manifest). Without it
 Supabase refuses to send the browser back to the extension.
 
+**Safari only** (the Safari build of the extension has no `identity` API, so it signs in
+in a tab): add a second URL, the Worker's landing page, which serves a static "you can
+close this tab" page and does nothing else:
+
+```
+https://go.lfcrea.com/auth/done
+```
+
 ## How the domain is enforced
 
 Because LF Creative is a live app that also has non-`lfcrea.com` users, the project is

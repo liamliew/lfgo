@@ -31,6 +31,19 @@ function call(method: string, path: string, body?: unknown, headers: Record<stri
   );
 }
 
+describe("extension sign-in landing page", () => {
+  it("serves a static page without needing an API key, and never as a link", async () => {
+    const res = await worker.fetch(new Request("https://go.test/auth/done?code=abc"), env);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    const html = await res.text();
+    expect(html).toContain("Almost done");
+    expect(html).not.toContain("<script");
+    expect(html).not.toContain("abc");
+  });
+});
+
 describe("auth", () => {
   it("rejects missing and wrong keys, accepts bearer", async () => {
     expect((await call("GET", "/api/links", undefined, { "x-api-key": "" })).status).toBe(401);

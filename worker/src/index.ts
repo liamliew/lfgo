@@ -41,6 +41,18 @@ function codeFromPath(path: string): string | null {
   return code.includes("/") ? null : code;
 }
 
+/**
+ * Where the Safari extension's Google sign-in ends (Safari has no identity API, so the
+ * flow runs in a tab). The extension's content script reads this page's address, which
+ * carries the one-time sign-in code, then closes the tab. The page itself does nothing:
+ * no scripts, no requests, and no referrer is sent anywhere from it.
+ */
+const authDonePage = () => {
+  const res = htmlPage(200, "Signed in", "Almost done", "Returning to LFC Tools. You can close this tab.");
+  res.headers.set("referrer-policy", "no-referrer");
+  return res;
+};
+
 const notFound = () =>
   htmlPage(404, "Link not found", "Link not found", "This short link does not exist or was removed.");
 
@@ -51,6 +63,7 @@ async function handleRedirect(request: Request, env: Env, path: string): Promise
   if (path === "/") {
     return htmlPage(200, "Short links", "Short links", "Nothing to see here.");
   }
+  if (path === "/auth/done") return authDonePage();
   const code = codeFromPath(path);
   const link = code ? await getLink(env, code).catch(() => null) : null;
   if (!link) return notFound();
