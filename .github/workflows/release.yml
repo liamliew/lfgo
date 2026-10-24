@@ -14,6 +14,9 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.v.outputs.publish }}
+      tag: extension-v${{ steps.v.outputs.ver }}
     steps:
       - uses: actions/checkout@v4
 
@@ -49,50 +52,24 @@ jobs:
             options.html options.css options.js \
             theme.css icons fonts vendor INSTALL.txt
 
-      # Optional: for force-installing in Google Workspace without the Chrome Web Store.
-      # Needs the repository secret EXT_PRIVATE_KEY (the .pem matching "key" in manifest.json);
-      # without it this step is skipped and the release has only the zip.
-      - name: Sign .crx and write the update manifest
-        if: steps.v.outputs.publish == 'true'
-        id: crx
-        env:
-          EXT_PRIVATE_KEY: ${{ secrets.EXT_PRIVATE_KEY }}
-        run: |
-          if [ -z "$EXT_PRIVATE_KEY" ]; then
-            echo "EXT_PRIVATE_KEY is not set: skipping the signed .crx."
-            echo "signed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          ver="${{ steps.v.outputs.ver }}"
-          umask 077
-          printf '%s\n' "$EXT_PRIVATE_KEY" > "$RUNNER_TEMP/ext.pem"
-          EXT_KEY_FILE="$RUNNER_TEMP/ext.pem" CHROME_BIN=google-chrome \
-            scripts/pack-crx.sh "https://github.com/${{ github.repository }}/releases/download/extension-v$ver/lfc-tools-$ver.crx" dist/crx
-          rm -f "$RUNNER_TEMP/ext.pem"
-          echo "signed=true" >> "$GITHUB_OUTPUT"
-
       - name: Publish release
         if: steps.v.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           ver="${{ steps.v.outputs.ver }}"
-          assets=("lfc-tools-extension-$ver.zip")
-          if [ "${{ steps.crx.outputs.signed }}" = "true" ]; then assets+=("dist/crx/lfc-tools-$ver.crx"); fi
-          gh release create "extension-v$ver" "${assets[@]}" \
+          gh release create "extension-v$ver" "lfc-tools-extension-$ver.zip" \
             --target "$GITHUB_SHA" \
             --title "LFC Tools $ver" \
             --notes "Download **lfc-tools-extension-$ver.zip**, unzip it, then follow INSTALL.txt (Load unpacked in chrome://extensions). It needs the matching Worker deployed from branch claude/links-worker (this version stores page titles, so redeploy the Worker if you have not since 0.2.0)."
 
-      # The update manifest lives in the repository (served by raw.githubusercontent.com,
-      # no redirects) so managed browsers can poll one stable URL; it points at the release's .crx.
-      - name: Publish update manifest
-        if: steps.v.outputs.publish == 'true' && steps.crx.outputs.signed == 'true'
-        run: |
-          mkdir -p update
-          cp dist/crx/updates.xml update/updates.xml
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add update/updates.xml
-          git commit -m "Update manifest for ${{ steps.v.outputs.ver }}" || exit 0
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+  # Signed .crx + update.xml on Cloudflare Pages for the Google Admin console. Called here
+  # because a release created with GITHUB_TOKEN does not trigger publish-crx.yml's own
+  # `release` trigger.
+  crx:
+    needs: release
+    if: needs.release.outputs.publish == 'true'
+    uses: ./.github/workflows/publish-crx.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+    secrets: inherit

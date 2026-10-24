@@ -1,0 +1,11 @@
+# Cloudflare Pages headers for the self-hosted extension files (see .github/workflows/publish-crx.yml).
+# "! Header" detaches a header another rule or Cloudflare would otherwise add.
+/update.xml
+  Content-Type: text/xml; charset=utf-8
+  Cache-Control: public, max-age=300
+  ! X-Content-Type-Options
+
+/*.crx
+  Content-Type: application/x-chrome-extension
+  Cache-Control: public, max-age=31536000, immutable
+  ! X-Content-Type-Options

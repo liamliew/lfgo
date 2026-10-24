@@ -103,28 +103,34 @@ API key.
 
 ## Install for the whole Google Workspace (free)
 
-No Chrome Web Store account needed. The release workflow can sign the extension and publish
-an update file; the Admin console then installs it for everyone and keeps it updated.
-The extension keeps its current id, so the Worker and Supabase settings stay as they are.
+On every release, `.github/workflows/publish-crx.yml` packs the extension into a signed CRX3,
+writes `update.xml` (Chrome's gupdate format) and deploys both to Cloudflare Pages, then
+fetches them back to check status, content type (`application/x-chrome-extension`, no
+`nosniff`) and bytes. It fails the build if `manifest.json`'s `update_url` is not the hosted
+`update.xml`. The extension keeps its id, `bfdicajogngofgmdnilbhmpliocicbpi`.
 
-One-time setup:
-1. Add the signing key as a repository secret named **EXT_PRIVATE_KEY**: the full text of the
-   `.pem` file for this extension (GitHub: Settings > Secrets and variables > Actions).
-   Keep the file safe: whoever has it can publish updates as this extension. It is not in
-   this repository.
-2. Bump `version` in `manifest.json` and push. The release then also contains
-   `lfc-tools-<version>.crx`, and `update/updates.xml` is updated on this branch.
-3. Google Admin console > Devices > Chrome > Apps & extensions > Users & browsers > pick the
-   organisational unit > **+** > *Add Chrome app or extension by ID* > *From a custom URL*:
-   - Extension ID: `bfdicajogngofgmdnilbhmpliocicbpi`
-   - URL: `https://raw.githubusercontent.com/liamliew/lfgo/claude/links-extension/update/updates.xml`
-   - Installation policy: **Force install** (optionally pin to the toolbar).
+One-time setup (repository secrets, GitHub: Settings > Secrets and variables > Actions):
+- `EXTENSION_PEM`: the full text of the extension's private key (`.pem`). The workflow checks it
+  belongs to the `key` in `manifest.json`. Keep a copy safe: it is not in this repository.
+- `CLOUDFLARE_API_TOKEN`: a token with Account > Cloudflare Pages > Edit.
+- `CLOUDFLARE_ACCOUNT_ID`: your Cloudflare account id.
 
-Try it on a small test organisational unit first. Google's rules for installing extensions
-from outside the Web Store differ by platform: on Windows and Mac the browser generally has
-to be managed (for example enrolled in Chrome Browser Cloud Management, which is free), so
-check the current Admin console help before rolling it out to everyone. Updates arrive
-automatically after each version bump.
+The Pages project is `lfc-tools` (created on the first run) at `https://lfc-tools.pages.dev`.
+To use another name or a custom domain, change `PAGES_PROJECT` and `BASE_URL` in the workflow
+and `update_url` in `manifest.json` together; the build checks they agree.
+
+Then bump `version` in `manifest.json` and push. Admin console (Devices > Chrome > Apps &
+extensions > Users & browsers > organisational unit > **+** > *Add Chrome app or extension by
+ID* > *From a custom URL*):
+- Extension ID: `bfdicajogngofgmdnilbhmpliocicbpi`
+- URL: `https://lfc-tools.pages.dev/update.xml`
+- Installation policy: **Force install**
+
+Chrome checks for updates every few hours using the `update_url` in the installed extension's
+manifest, and only accepts a newer version signed with the same key. Try it on a small test
+organisational unit first; Google's rules for installs from outside the Web Store differ by
+platform (on Windows and Mac the browser generally has to be managed, for example enrolled in
+Chrome Browser Cloud Management, which is free), so check the current Admin console help.
 
 ## Safari
 

@@ -3,7 +3,7 @@
 # manifest.json (so the extension keeps its id), and writes the update manifest Chrome polls.
 #   EXT_KEY_FILE=key.pem CHROME_BIN=google-chrome scripts/pack-crx.sh <crx-url> [out-dir]
 # <crx-url> is where the .crx will be downloadable. Output: <out-dir>/lfc-tools-<ver>.crx and
-# <out-dir>/updates.xml. The private key is never written into the output.
+# <out-dir>/update.xml. The private key is never written into the output.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 url="${1:?usage: pack-crx.sh <crx-url> [out-dir]}"
@@ -23,5 +23,5 @@ cp "$key" "$stage/ext.pem"
 mkdir -p "$out"
 cp "$stage/ext.crx" "$out/lfc-tools-$version.crx"
 id="$(node scripts/extension-id.mjs)"
-node scripts/update-manifest.mjs "$id" "$version" "$url" > "$out/updates.xml"
+node scripts/update-manifest.mjs "$id" "$version" "$url" > "$out/update.xml"
 echo "Packed $out/lfc-tools-$version.crx (id $id)"
