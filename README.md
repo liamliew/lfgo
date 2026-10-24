@@ -91,11 +91,14 @@ API key.
 - **Storage:** the session lives in `chrome.storage.local`, not `storage.sync`.
 - **API key:** still works. If you are signed in the session is used; signed out,
   the saved key is the fallback. Keep it for admin / scripts.
-- **Needs setup first:** the Supabase project, a Google OAuth client and the Worker's
-  `SUPABASE_URL` (see `worker/LF-ID-SETUP.md` on branch `claude/links-worker`), then
-  the project's URL and publishable key go in `config.js`. They are public values;
-  never put a secret key there. Until `config.js` is filled in, the Google button is
-  hidden and the extension behaves as before.
+- **Setup:** it uses the LF Creative Supabase project (public URL and publishable key in
+  `config.js`; a test makes sure no secret key can be committed there). One manual
+  step: in that project, Authentication -> URL Configuration -> Redirect URLs, add the
+  address shown on this extension's Settings page under "Server setup" (it is
+  `https://bfdicajogngofgmdnilbhmpliocicbpi.chromiumapp.org/`). Details, side effects
+  and the domain rules are in `worker/LF-ID-SETUP.md` on branch `claude/links-worker`.
+- **Domain:** only `@lfcrea.com` Google accounts get in: the extension refuses others,
+  and the Worker rejects them even if a token is presented.
 - **Safari:** `chrome.identity` may not be available there; Phase 4 will check.
 
 ## PIN locks: what you need to know

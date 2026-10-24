@@ -42,8 +42,12 @@ describe("PKCE helpers", () => {
 });
 
 describe("loadAuthConfig", () => {
-  it("is disabled when nothing is configured, and takes stored overrides", async () => {
-    assert.equal((await loadAuthConfig(area())).enabled, false);
+  it("uses the project in config.js by default, and stored overrides win", async () => {
+    const def = await loadAuthConfig(area());
+    assert.match(def.url, /^https:\/\/[a-z0-9]+\.supabase\.co$/);
+    assert.match(def.key, /^sb_publishable_/);
+    assert.equal(def.enabled, true);
+    assert.equal(def.domain, "lfcrea.com");
     const cfg = await loadAuthConfig(area({ supabaseUrl: "https://x.supabase.co/", supabaseKey: "k" }));
     assert.deepEqual([cfg.url, cfg.key, cfg.enabled, cfg.domain], ["https://x.supabase.co", "k", true, "lfcrea.com"]);
   });
@@ -205,7 +209,7 @@ describe("connect and the client", () => {
     assert.equal(both.authEnabled, true);
     assert.equal((await connect(area({ apiKey: "k" }))).mode, "key");
     const none = await connect(area());
-    assert.deepEqual([none.mode, none.client, none.authEnabled], [null, null, false]);
+    assert.deepEqual([none.mode, none.client, none.authEnabled], [null, null, true]);
   });
   it("sends the Bearer token when signed in, the key otherwise, and refuses when neither", async () => {
     const seen = [];

@@ -93,3 +93,22 @@ describe("popup layout guards", () => {
     assert.match(css, /\.recent-list\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
   });
 });
+
+describe("config.js holds only public values", () => {
+  const src = readFileSync(new URL("config.js", root), "utf8");
+  const url = src.match(/SUPABASE_URL\s*=\s*"([^"]*)"/)?.[1];
+  const key = src.match(/SUPABASE_PUBLISHABLE_KEY\s*=\s*"([^"]*)"/)?.[1];
+  it("has a Supabase project URL and a publishable key, or neither", () => {
+    assert.ok(url !== undefined && key !== undefined);
+    assert.equal(Boolean(url), Boolean(key), "set both or neither");
+    if (url) assert.match(url, /^https:\/\/[a-z0-9]{20}\.supabase\.co$/);
+  });
+  it("never contains a secret: only a sb_publishable_ key, no service_role / sb_secret_ / JWT", () => {
+    if (key) assert.match(key, /^sb_publishable_[A-Za-z0-9_-]+$/);
+    assert.doesNotMatch(src, /sb_secret_|service_role|eyJ[A-Za-z0-9_-]{20,}\./);
+  });
+  it("matches the Worker's configured project", () => {
+    // The Worker lives on another branch; this guards the format only.
+    assert.match(src, /ALLOWED_DOMAIN\s*=\s*"lfcrea\.com"/);
+  });
+});
