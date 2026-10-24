@@ -6,11 +6,11 @@ Personal URL shortener: a Cloudflare Worker backed by Workers KV, served on
 | Route | Auth | What |
 |---|---|---|
 | `GET /:code` | public | 302 to the long URL, friendly 404 page if missing |
-| `POST /api/links` | key | Create `{url, alias?}` -> `{code, shortUrl, url, createdAt, updatedAt}` (201) |
+| `POST /api/links` | key | Create `{url, alias?, title?}` -> `{code, shortUrl, url, title, createdAt, updatedAt}` (201) |
 | `GET /api/links` | key | List, paginated: `?limit=` (default 100, max 500) `&cursor=` |
 | `GET /api/links?url=<long url>` | key | Look up the link(s) for an exact destination (used by the extension to avoid duplicates) |
 | `GET /api/links/:code` | key | One link |
-| `PATCH /api/links/:code` | key | `{newCode?, url?}`: rename and/or change destination |
+| `PATCH /api/links/:code` | key | `{newCode?, url?, title?}`: rename, change destination and/or title (`""` clears the title) |
 | `DELETE /api/links/:code` | key | Delete |
 
 Auth: send the key as `X-API-Key: <key>` or `Authorization: Bearer <key>`.
@@ -23,6 +23,9 @@ trailing or doubled hyphens, and not a reserved word (`api`, `admin`, `www`,
 `my-docs`. Generated codes are 7 random characters. Destinations must be
 absolute `http(s)` URLs up to 2048 characters, without credentials, and not on
 the shortener's own host.
+
+`title` is optional free text (page title), whitespace-collapsed and capped at
+140 characters.
 
 The redirect is a **302**, not a 301, so edits and deletes are not stuck in
 browser caches.
@@ -132,8 +135,8 @@ npm run typecheck
 - **Free-plan KV limits** (see KV limits docs): 1,000 writes/day, 100,000
   reads/day, 1 write per second to the same key. Each create is one write
   (plus reads for the checks); a rename is two writes.
-- Link metadata is limited to 1,024 bytes, so URLs longer than about 700 bytes
-  are not duplicated into it and the list endpoint reads those values
+- Link metadata is limited to 1,024 bytes. The URL and title are copied into it
+  when they fit; when they do not, the list endpoint reads those values
   individually. This is handled transparently.
 - There is no rate limiting beyond Cloudflare's defaults; the API is protected
   only by the key.

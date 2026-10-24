@@ -9,6 +9,7 @@ import type { Env } from "./types";
 
 export interface LinkRecord {
   url: string;
+  title?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -21,14 +22,22 @@ interface LinkMeta {
   c: string; // createdAt
   m: string; // updatedAt
   u?: string; // url, only when it fits
+  t?: string; // title, only when it fits
+  f?: 1; // metadata is incomplete: read the full value
 }
 
-const META_URL_MAX_BYTES = 700;
+const META_LIMIT_BYTES = 1000; // KV allows 1024 bytes of serialized metadata
 const encoder = new TextEncoder();
+const size = (v: unknown) => encoder.encode(JSON.stringify(v)).length;
 
 function toMeta(rec: LinkRecord): LinkMeta {
   const meta: LinkMeta = { c: rec.createdAt, m: rec.updatedAt };
-  if (encoder.encode(rec.url).length <= META_URL_MAX_BYTES) meta.u = rec.url;
+  if (size({ ...meta, u: rec.url }) > META_LIMIT_BYTES) return { ...meta, f: 1 };
+  meta.u = rec.url;
+  if (rec.title) {
+    if (size({ ...meta, t: rec.title }) <= META_LIMIT_BYTES) meta.t = rec.title;
+    else meta.f = 1;
+  }
   return meta;
 }
 
@@ -40,6 +49,7 @@ function parseRecord(raw: string | null): LinkRecord | null {
     const now = new Date(0).toISOString();
     return {
       url: v.url,
+      ...(typeof v.title === "string" && v.title ? { title: v.title } : {}),
       createdAt: v.createdAt ?? now,
       updatedAt: v.updatedAt ?? v.createdAt ?? now,
     };
@@ -79,8 +89,14 @@ export async function listLinks(
     await Promise.all(
       res.keys.map(async (k): Promise<Link | null> => {
         const m = k.metadata;
-        if (m?.u && m.c) {
-          return { code: k.name, url: m.u, createdAt: m.c, updatedAt: m.m ?? m.c };
+        if (m && !m.f && m.u && m.c) {
+          return {
+            code: k.name,
+            url: m.u,
+            ...(m.t ? { title: m.t } : {}),
+            createdAt: m.c,
+            updatedAt: m.m ?? m.c,
+          };
         }
         return getLink(env, k.name);
       }),

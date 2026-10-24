@@ -3,7 +3,7 @@ import {
   deleteLink, findByUrl, getLink, listLinks, putLink, type Link,
 } from "./store";
 import type { Env } from "./types";
-import { generateCode, normalizeCode, validateAlias, validateUrl } from "./validate";
+import { cleanTitle, generateCode, normalizeCode, validateAlias, validateUrl } from "./validate";
 
 const GENERATE_ATTEMPTS = 5;
 
@@ -16,6 +16,7 @@ function present(link: Link, base: string) {
     code: link.code,
     shortUrl: `${base}/${link.code}`,
     url: link.url,
+    title: link.title ?? null,
     createdAt: link.createdAt,
     updatedAt: link.updatedAt,
   };
@@ -81,6 +82,11 @@ async function handleApi(request: Request, env: Env, path: string): Promise<Resp
       if (!parsed.ok) return parsed.res;
       const target = validateUrl(parsed.body.url, selfHost);
       if (!target.ok) return apiError(400, target.error);
+      const rawTitle = parsed.body.title;
+      if (rawTitle !== undefined && rawTitle !== null && typeof rawTitle !== "string") {
+        return apiError(400, "title must be a string");
+      }
+      const title = typeof rawTitle === "string" ? cleanTitle(rawTitle) : "";
 
       let code: string;
       const rawAlias = parsed.body.alias;
@@ -101,7 +107,7 @@ async function handleApi(request: Request, env: Env, path: string): Promise<Resp
       }
 
       const now = new Date().toISOString();
-      const rec = { url: target.url, createdAt: now, updatedAt: now };
+      const rec = { url: target.url, ...(title ? { title } : {}), createdAt: now, updatedAt: now };
       await putLink(env, code, rec);
       return json(present({ code, ...rec }, base), 201);
     }
@@ -119,9 +125,12 @@ async function handleApi(request: Request, env: Env, path: string): Promise<Resp
   if (method === "PATCH") {
     const parsed = await readJson(request);
     if (!parsed.ok) return parsed.res;
-    const { newCode: rawNew, url: rawUrl } = parsed.body;
-    if (rawNew === undefined && rawUrl === undefined) {
-      return apiError(400, "Provide newCode and/or url");
+    const { newCode: rawNew, url: rawUrl, title: rawTitle } = parsed.body;
+    if (rawNew === undefined && rawUrl === undefined && rawTitle === undefined) {
+      return apiError(400, "Provide newCode, url and/or title");
+    }
+    if (rawTitle !== undefined && rawTitle !== null && typeof rawTitle !== "string") {
+      return apiError(400, "title must be a string");
     }
 
     const current = await getLink(env, code);
@@ -147,8 +156,11 @@ async function handleApi(request: Request, env: Env, path: string): Promise<Resp
       }
     }
 
+    // title: omitted keeps the current one, "" or null clears it.
+    const title = rawTitle === undefined ? current.title : cleanTitle(rawTitle ?? "");
     const rec = {
       url: destination,
+      ...(title ? { title } : {}),
       createdAt: current.createdAt,
       updatedAt: new Date().toISOString(),
     };

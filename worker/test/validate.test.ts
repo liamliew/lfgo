@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generateCode, normalizeCode, validateAlias, validateUrl } from "../src/validate";
+import { cleanTitle, generateCode, normalizeCode, validateAlias, validateUrl } from "../src/validate";
 
 describe("validateAlias", () => {
   it.each(["abc", "my-link", "a1b2c3", "x".repeat(32)])("accepts %s", (a) => {
@@ -46,5 +46,13 @@ describe("generateCode", () => {
       seen.add(c);
     }
     expect(seen.size).toBeGreaterThan(495);
+  });
+});
+
+describe("cleanTitle", () => {
+  it("collapses whitespace, trims and caps at 140", () => {
+    expect(cleanTitle("  a \n\t b  ")).toBe("a b");
+    expect(cleanTitle("y".repeat(300))).toHaveLength(140);
+    expect(cleanTitle("   ")).toBe("");
   });
 });

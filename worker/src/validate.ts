@@ -4,6 +4,7 @@ export const ALIAS_MIN = 3;
 export const ALIAS_MAX = 32;
 export const URL_MAX = 2048;
 export const GENERATED_LENGTH = 7;
+export const TITLE_MAX = 140;
 
 // Paths the Worker itself serves or that browsers/crawlers probe for.
 export const RESERVED = new Set([
@@ -78,4 +79,9 @@ export function generateCode(length = GENERATED_LENGTH): string {
     }
   }
   return out;
+}
+
+/** Page titles are free text: collapse whitespace and cap the length. */
+export function cleanTitle(raw: string): string {
+  return raw.replace(/\s+/g, " ").trim().slice(0, TITLE_MAX);
 }

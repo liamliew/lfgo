@@ -200,3 +200,48 @@ describe("cors", () => {
     expect(res.headers.get("access-control-allow-origin")).toBeNull();
   });
 });
+
+describe("titles", () => {
+  it("stores a cleaned title and returns it from create, get and list", async () => {
+    const res = await call("POST", "/api/links", {
+      url: "https://example.com/a",
+      alias: "titled",
+      title: "  My   page \n title  ",
+    });
+    expect(((await res.json()) as any).title).toBe("My page title");
+    expect(((await (await call("GET", "/api/links/titled")).json()) as any).title).toBe("My page title");
+    const list = (await (await call("GET", "/api/links")).json()) as any;
+    expect(list.links[0].title).toBe("My page title");
+  });
+  it("returns null when there is no title and rejects non-strings", async () => {
+    const res = await call("POST", "/api/links", { url: "https://example.com/b", alias: "plain" });
+    expect(((await res.json()) as any).title).toBeNull();
+    expect((await call("POST", "/api/links", { url: "https://example.com/c", title: 5 })).status).toBe(400);
+  });
+  it("truncates very long titles to 140 characters", async () => {
+    const res = await call("POST", "/api/links", { url: "https://example.com/d", alias: "longtitle", title: "x".repeat(500) });
+    expect(((await res.json()) as any).title).toHaveLength(140);
+  });
+  it("survives metadata overflow: long url plus title still lists in full", async () => {
+    const url = "https://example.com/" + "p".repeat(850);
+    const title = "T".repeat(140);
+    const res = await call("POST", "/api/links", { url, alias: "bigmeta", title });
+    expect(res.status).toBe(201);
+    const list = (await (await call("GET", "/api/links")).json()) as any;
+    const hit = list.links.find((l: any) => l.code === "bigmeta");
+    expect(hit.url).toBe(url);
+    expect(hit.title).toBe(title);
+  });
+  it("patch sets, keeps (on rename) and clears the title", async () => {
+    await call("POST", "/api/links", { url: "https://example.com/e", alias: "edit-me" });
+    let j = (await (await call("PATCH", "/api/links/edit-me", { title: "Hello" })).json()) as any;
+    expect(j.title).toBe("Hello");
+    j = (await (await call("PATCH", "/api/links/edit-me", { newCode: "edited" })).json()) as any;
+    expect(j.code).toBe("edited");
+    expect(j.title).toBe("Hello");
+    j = (await (await call("PATCH", "/api/links/edited", { title: "" })).json()) as any;
+    expect(j.title).toBeNull();
+    expect((await call("PATCH", "/api/links/edited", { title: 1 })).status).toBe(400);
+    expect((await call("PATCH", "/api/links/edited", {})).status).toBe(400);
+  });
+});
