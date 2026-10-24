@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { generateKeyPairSync } from "node:crypto";
-import { checkKey, checkUpdateUrl } from "../scripts/check-release.mjs";
+import { checkKey, checkUpdateUrl, describePem, normalizePem } from "../scripts/check-release.mjs";
 import { extensionId } from "../scripts/extension-id.mjs";
 import { toSafariManifest } from "../scripts/safari-manifest.mjs";
 import { updateManifest } from "../scripts/update-manifest.mjs";
@@ -61,6 +61,23 @@ describe("publish-crx workflow", () => {
     assert.equal(checkKey(pem, key), null);
     assert.match(checkKey(pem, manifest.key), /not the key behind/);
     assert.match(checkKey("not a key", key), /not a readable private key/);
+  });
+
+  it("accepts a key pasted without line breaks, quoted, or with literal \\n, and describes bad input safely", () => {
+    const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const pem = privateKey.export({ type: "pkcs8", format: "pem" });
+    const key = publicKey.export({ type: "spki", format: "der" }).toString("base64");
+    const oneLine = pem.trim().replace(/\n/g, " ");
+    const literal = JSON.stringify(pem.trim());
+    for (const variant of [oneLine, literal, `"${oneLine}"`, `${pem}\n\n`, pem.replace(/\n/g, "\r\n")]) {
+      assert.equal(checkKey(variant, key), null);
+      assert.match(normalizePem(variant), /^-----BEGIN PRIVATE KEY-----\n([A-Za-z0-9+/=]{1,64}\n)+-----END PRIVATE KEY-----\n$/);
+    }
+    assert.equal(normalizePem("just some text"), null);
+    const msg = checkKey("MIIEvQIBADANBg", key);
+    assert.match(msg, /no BEGIN line/);
+    assert.doesNotMatch(msg, /MIIEvQ/);
+    assert.match(describePem("a\nb"), /2 line/);
   });
 
   it("serves the .crx as application/x-chrome-extension with nosniff detached", () => {

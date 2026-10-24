@@ -85,7 +85,7 @@ jobs:
         run: |
           ver="$(node -p "require('./manifest.json').version")"
           umask 077
-          printf '%s\n' "$EXTENSION_PEM" > "$RUNNER_TEMP/extension.pem"
+          node scripts/check-release.mjs write-key "$RUNNER_TEMP/extension.pem"
           EXT_KEY_FILE="$RUNNER_TEMP/extension.pem" CHROME_BIN=google-chrome \
             scripts/pack-crx.sh "$BASE_URL/lfc-tools-$ver.crx" site
           rm -f "$RUNNER_TEMP/extension.pem"
