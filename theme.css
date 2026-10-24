@@ -1,61 +1,159 @@
+/* LF GO design tokens and shared components. Inter is bundled (fonts/), so the
+   extension works offline and the strict extension CSP stays untouched. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(fonts/inter-latin-ext-wght-normal.woff2) format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(fonts/inter-latin-wght-normal.woff2) format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 :root {
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --bg: #ffffff;
-  --fg: #1a1a1a;
-  --muted: #666b73;
-  --border: #d9dce1;
-  --field: #f6f7f9;
+  --surface: #f6f7f9;
+  --surface-2: #eceef2;
+  --border: #e3e6eb;
+  --fg: #101828;
+  --muted: #667085;
   --accent: #4f46e5;
+  --accent-hover: #4338ca;
   --accent-fg: #ffffff;
-  --ok: #0f7b3a;
-  --err: #b42318;
-  --focus: rgba(79, 70, 229, 0.35);
+  --accent-soft: #eef0ff;
+  --danger: #d92d20;
+  --danger-soft: #fef3f2;
+  --ok: #067647;
+  --ok-soft: #ecfdf3;
+  --ring: rgba(79, 70, 229, 0.28);
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.1);
+  --shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.18);
+  --radius: 10px;
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #17181b;
-    --fg: #ececee;
-    --muted: #9aa0a8;
-    --border: #33363c;
-    --field: #202226;
-    --accent: #7c75ff;
-    --accent-fg: #101012;
+    --bg: #0f1012;
+    --surface: #17181c;
+    --surface-2: #202228;
+    --border: #2a2d35;
+    --fg: #f2f4f7;
+    --muted: #98a2b3;
+    --accent: #8b85ff;
+    --accent-hover: #a29dff;
+    --accent-fg: #0f1012;
+    --accent-soft: #23234a;
+    --danger: #ff7a70;
+    --danger-soft: #3a1a18;
     --ok: #4cc27e;
-    --err: #ff8b80;
-    --focus: rgba(124, 117, 255, 0.4);
+    --ok-soft: #12301f;
+    --ring: rgba(139, 133, 255, 0.4);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6);
   }
 }
+
 * { box-sizing: border-box; }
 body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 400 14px/1.5 var(--font);
+  font-feature-settings: "cv11", "ss03";
+  -webkit-font-smoothing: antialiased;
 }
-h1 { font-size: 15px; margin: 0; font-weight: 600; }
-button, input { font: inherit; color: inherit; }
-button {
-  border: 1px solid var(--border);
-  background: var(--field);
-  border-radius: 8px;
-  padding: 7px 12px;
-  cursor: pointer;
-}
-button:hover:not(:disabled) { border-color: var(--accent); }
-button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
-button:disabled { opacity: 0.5; cursor: default; }
-button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-input[type="text"], input[type="password"] {
-  width: 100%;
-  border: 1px solid var(--border);
-  background: var(--field);
-  border-radius: 8px;
-  padding: 7px 10px;
-}
-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); outline: none; }
-a { color: var(--accent); }
-.muted { color: var(--muted); }
-.msg { min-height: 1.4em; font-size: 13px; }
-.msg.ok { color: var(--ok); }
-.msg.err { color: var(--err); }
+h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+p { margin: 0; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button, input, select { font: inherit; color: inherit; }
 [hidden] { display: none !important; }
+.muted { color: var(--muted); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Brand */
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: -0.02em; font-size: 15px; }
+.brand img { width: 22px; height: 22px; border-radius: 6px; display: block; }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--fg);
+  border-radius: 8px; padding: 7px 12px; font-weight: 500; cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) { background: var(--surface); border-color: var(--surface-2); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.btn.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn.danger:hover:not(:disabled) { filter: brightness(0.93); }
+.btn.ghost { border-color: transparent; background: transparent; }
+.btn.small { padding: 4px 9px; font-size: 13px; }
+.btn:disabled { opacity: 0.5; cursor: default; }
+.icon-btn {
+  display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0;
+  border: 1px solid transparent; background: transparent; color: var(--muted);
+  border-radius: 8px; cursor: pointer; flex: none;
+}
+.icon-btn:hover:not(:disabled) { background: var(--surface-2); color: var(--fg); }
+.icon-btn.danger:hover:not(:disabled) { background: var(--danger-soft); color: var(--danger); }
+.icon-btn:disabled { opacity: 0.45; cursor: default; }
+.icon-btn.done { color: var(--ok); }
+.icon-btn svg, .btn svg, [data-icon] svg { width: 16px; height: 16px; flex: none; }
+[data-icon] { display: inline-grid; place-items: center; }
+:is(button, input, select, a, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Inputs */
+.input, input[type="text"], input[type="url"], input[type="password"], input[type="search"], select {
+  width: 100%; border: 1px solid var(--border); background: var(--bg); border-radius: 8px;
+  padding: 7px 10px; min-width: 0;
+}
+input::placeholder { color: var(--muted); opacity: 0.8; }
+input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
+input:disabled { background: var(--surface); color: var(--muted); }
+label { font-weight: 500; font-size: 13px; }
+input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+
+/* Messages */
+.msg { min-height: 1.4em; font-size: 13px; color: var(--muted); }
+.msg.ok { color: var(--ok); }
+.msg.err { color: var(--danger); }
+
+/* Skeleton shimmer for "Generating" and loading states */
+.skeleton { position: relative; overflow: hidden; background: var(--surface-2); border-radius: 8px; }
+.skeleton::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: translateX(-100%); animation: shimmer 1.2s infinite;
+}
+@media (prefers-color-scheme: dark) { .skeleton::after { background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent); } }
+@keyframes shimmer { to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .skeleton::after { animation: none; } }
+
+/* Toasts */
+.toasts { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); display: grid; gap: 8px; z-index: 50; pointer-events: none; }
+.toast {
+  background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; box-shadow: var(--shadow-lg);
+  display: flex; gap: 8px; align-items: center; max-width: min(90vw, 520px);
+}
+.toast.err { background: var(--danger); color: #fff; }
+
+/* Dialog */
+dialog {
+  border: 1px solid var(--border); border-radius: 14px; padding: 0; background: var(--bg); color: var(--fg);
+  box-shadow: var(--shadow-lg); width: min(92vw, 440px);
+}
+dialog::backdrop { background: rgba(16, 24, 40, 0.5); }
+.dialog-body { padding: 20px; display: grid; gap: 14px; }
+.dialog-body h2 { font-size: 16px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.field-group { display: grid; gap: 6px; }

@@ -1,132 +1,198 @@
 import {
-  ApiError, aliasProblem, checkTabUrl, createClient, describeError, loadSettings,
+  ApiError, aliasProblem, checkTabUrl, createClient, describeError, hostOf, loadSettings, shortLabel, sortLinks,
 } from "./shared.js";
+import { drawQr, qrPngBlob, qrSvgBlob } from "./qr.js";
+import { copyText, downloadBlob, flashDone, mountIcons, slug } from "./ui.js";
 
 const $ = (id) => document.getElementById(id);
-const els = {
-  loading: $("loading"), setup: $("setup"), blocked: $("blocked"), ready: $("ready"),
-  blockedText: $("blocked-text"), error: $("error"), prefix: $("prefix"), alias: $("alias"),
-  save: $("save"), copy: $("copy"), status: $("status"), dest: $("dest"),
-};
+const sections = ["setup", "blocked", "failed", "ready"];
 
 let client;
 let base = "";
 let currentCode = "";
-let destination = "";
-
-function show(section) {
-  for (const key of ["loading", "setup", "blocked", "ready"]) els[key].hidden = key !== section;
-}
-
-function say(text, kind = "") {
-  els.status.textContent = text;
-  els.status.className = `msg ${kind}`.trim();
-}
-
-function fail(err) {
-  els.error.textContent = describeError(err, base);
-  els.error.hidden = false;
-}
+let tab = { url: "", title: "" };
 
 const shortUrl = () => `${base}/${currentCode}`;
 
-async function copyLink() {
-  try {
-    await navigator.clipboard.writeText(shortUrl());
-    return true;
-  } catch {
-    return false;
+function showOnly(name) {
+  for (const s of sections) $(s).hidden = s !== name;
+}
+
+function say(text, kind = "") {
+  $("status").textContent = text;
+  $("status").className = `msg ${kind}`.trim();
+}
+
+function setLoading(on) {
+  document.body.classList.toggle("loading", on);
+  $("qr-frame").classList.toggle("skeleton", on);
+  $("alias").disabled = on;
+  $("copy").disabled = on;
+  $("qr-png").disabled = on;
+  $("qr-svg").disabled = on;
+  if (on) {
+    $("alias").value = "Generating…";
+    $("save").hidden = true;
+    say("");
   }
 }
 
-function syncSaveState() {
-  const value = els.alias.value;
-  els.save.disabled = value === currentCode || value === "";
+function paintDestination() {
+  $("dest-title").textContent = tab.title || hostOf(tab.url);
+  $("dest-url").textContent = tab.url;
+  $("dest-url").title = tab.url;
 }
 
-function render(link, note) {
-  currentCode = link.code;
-  els.alias.value = link.code;
-  els.prefix.textContent = `${new URL(base).host}/`;
-  els.dest.textContent = destination;
-  els.dest.parentElement.title = destination;
-  show("ready");
-  syncSaveState();
-  say(note, "");
+function paintQr() {
+  drawQr($("qr"), shortUrl(), 288);
 }
 
-async function activeTabUrl() {
-  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  return tab?.url;
+function syncSave() {
+  const v = $("alias").value;
+  $("save").hidden = v === currentCode || v === "" || $("alias").disabled;
+}
+
+async function activeTab() {
+  const [t] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  return { url: t?.url, title: t?.title };
+}
+
+async function generate() {
+  showOnly("ready");
+  paintDestination();
+  $("prefix").textContent = `${hostOf(base)}/`;
+  setLoading(true);
+  try {
+    const existing = await client.findByUrl(tab.url);
+    let link = existing ?? (await client.create(tab.url, undefined, tab.title));
+    // Older links have no title: fill it in quietly while we have the page.
+    if (existing && !existing.title && tab.title) {
+      link = await client.update(existing.code, { title: tab.title }).catch(() => existing);
+    }
+    currentCode = link.code;
+    $("alias").value = link.code;
+    setLoading(false);
+    paintQr();
+    syncSave();
+    const copied = await copyText(shortUrl());
+    say(`${existing ? "Existing link reused" : "Link created"}${copied ? " and copied" : ""}.`, copied ? "ok" : "");
+    loadRecent();
+  } catch (err) {
+    $("failed-text").textContent = describeError(err, base);
+    showOnly("failed");
+  }
+}
+
+async function loadRecent() {
+  try {
+    const links = sortLinks(await client.listAll(), "newest").filter((l) => l.code !== currentCode).slice(0, 4);
+    const list = $("recent-list");
+    list.replaceChildren();
+    for (const l of links) {
+      const li = document.createElement("li");
+      const text = document.createElement("div");
+      text.className = "recent-text";
+      const code = Object.assign(document.createElement("div"), { className: "recent-code", textContent: shortLabel(base, l.code) });
+      const sub = Object.assign(document.createElement("div"), { className: "recent-sub", textContent: l.title || l.url, title: l.url });
+      text.append(code, sub);
+      const btn = document.createElement("button");
+      btn.className = "icon-btn";
+      btn.type = "button";
+      btn.title = "Copy short link";
+      btn.setAttribute("aria-label", `Copy ${shortLabel(base, l.code)}`);
+      btn.innerHTML = '<span data-icon="copy"></span>';
+      mountIcons(btn);
+      btn.addEventListener("click", async () => {
+        if (await copyText(`${base}/${l.code}`)) flashDone(btn);
+      });
+      li.append(text, btn);
+      list.append(li);
+    }
+    $("recent").hidden = links.length === 0;
+  } catch {
+    $("recent").hidden = true; // recent links are a convenience; never block the popup
+  }
 }
 
 async function init() {
-  $("open-options").addEventListener("click", (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); });
+  mountIcons();
+  const openManage = (e) => {
+    e?.preventDefault();
+    chrome.tabs.create({ url: chrome.runtime.getURL("manage.html") });
+    window.close();
+  };
+  $("manage").addEventListener("click", openManage);
+  $("see-all").addEventListener("click", openManage);
+  $("settings").addEventListener("click", () => chrome.runtime.openOptionsPage());
   $("setup-btn").addEventListener("click", () => chrome.runtime.openOptionsPage());
+  $("retry").addEventListener("click", generate);
 
   const settings = await loadSettings();
   base = settings.base;
-  if (!settings.apiKey) return show("setup");
-
-  const tabCheck = checkTabUrl(await activeTabUrl());
-  if (!tabCheck.ok) {
-    els.blockedText.textContent = tabCheck.reason;
-    return show("blocked");
-  }
-  destination = tabCheck.url;
+  if (!settings.apiKey) return showOnly("setup");
   client = createClient({ base, apiKey: settings.apiKey });
 
-  try {
-    const existing = await client.findByUrl(destination);
-    const link = existing ?? (await client.create(destination));
-    render(link, existing ? "Existing link reused." : "Link created.");
-    if (await copyLink()) say(existing ? "Existing link reused and copied." : "Link created and copied.", "ok");
-  } catch (err) {
-    show("blocked");
-    els.blockedText.textContent = "";
-    fail(err);
+  tab = await activeTab();
+  const check = checkTabUrl(tab.url);
+  if (!check.ok) {
+    $("blocked-text").textContent = check.reason;
+    showOnly("blocked");
+    return loadRecent();
   }
+  tab.url = check.url;
+  await generate();
 }
 
-els.alias.addEventListener("input", () => {
+$("alias").addEventListener("input", () => {
   // Same normalisation the Worker applies, so what you see is what is saved.
-  els.alias.value = els.alias.value.toLowerCase().replace(/\s+/g, "-");
-  syncSaveState();
-  const value = els.alias.value;
-  if (value === currentCode || value === "") return say("");
-  const problem = aliasProblem(value);
+  $("alias").value = $("alias").value.toLowerCase().replace(/\s+/g, "-");
+  syncSave();
+  const v = $("alias").value;
+  if (v === currentCode || v === "") return say("");
+  const problem = aliasProblem(v);
   say(problem ?? "", problem ? "err" : "");
 });
 
 async function save() {
-  const next = els.alias.value;
+  const next = $("alias").value;
   const problem = aliasProblem(next);
   if (problem) return say(problem, "err");
-  els.save.disabled = true;
+  $("save").disabled = true;
   say("Saving…");
   try {
     const link = await client.rename(currentCode, next);
     currentCode = link.code;
-    els.alias.value = link.code;
-    say((await copyLink()) ? "Saved and copied." : "Saved.", "ok");
+    $("alias").value = link.code;
+    paintQr();
+    say((await copyText(shortUrl())) ? "Saved and copied." : "Saved.", "ok");
+    loadRecent();
   } catch (err) {
     say(describeError(err, base), "err");
   } finally {
-    syncSaveState();
+    $("save").disabled = false;
+    syncSave();
   }
 }
 
-els.save.addEventListener("click", save);
-els.alias.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !els.save.disabled) save();
+$("save").addEventListener("click", save);
+$("alias").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !$("save").hidden) save();
 });
-els.copy.addEventListener("click", async () => {
-  const ok = await copyLink();
+$("copy").addEventListener("click", async () => {
+  const ok = await copyText(shortUrl());
+  if (ok) flashDone($("copy"));
   say(ok ? "Copied." : "Could not copy. Select the link and copy it manually.", ok ? "ok" : "err");
+});
+$("qr-png").addEventListener("click", async () => {
+  downloadBlob(await qrPngBlob(shortUrl(), 1024), `lf-go-${slug(currentCode)}-qr.png`);
+  say("QR code saved as PNG.", "ok");
+});
+$("qr-svg").addEventListener("click", () => {
+  downloadBlob(qrSvgBlob(shortUrl()), `lf-go-${slug(currentCode)}-qr.svg`);
+  say("QR code saved as SVG.", "ok");
 });
 
 init().catch((err) => {
-  show("blocked");
-  els.blockedText.textContent = "";
-  fail(err instanceof ApiError ? err : new Error("Unexpected error"));
+  $("failed-text").textContent = describeError(err instanceof ApiError ? err : new Error("x"), base);
+  showOnly("failed");
 });

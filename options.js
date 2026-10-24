@@ -63,6 +63,10 @@ $("forget").addEventListener("click", async () => {
   say("Saved key removed.", "ok");
 });
 
+$("open-manage").addEventListener("click", () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL("manage.html") });
+});
+
 $("copy-origin").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText($("origin").textContent);

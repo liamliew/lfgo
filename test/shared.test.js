@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  ApiError, aliasProblem, checkTabUrl, createClient, describeError, loadSettings, normalizeBase,
-  removeApiKey, saveSettings,
+  ApiError, aliasProblem, checkTabUrl, createClient, describeError, filterLinks, hostOf, loadSettings,
+  normalizeBase, relativeTime, removeApiKey, saveSettings, shortLabel, sortLinks, toCsv,
 } from "../shared.js";
 
 describe("normalizeBase", () => {
@@ -111,5 +111,86 @@ describe("settings storage", () => {
     assert.deepEqual(await loadSettings(a), { base: "https://go.x.com", apiKey: "secret" });
     await removeApiKey(a);
     assert.equal((await loadSettings(a)).apiKey, "");
+  });
+});
+
+const L = (code, o = {}) => ({ code, url: `https://example.com/${code}`, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z", ...o });
+
+describe("client: titles, update, remove, listAll", () => {
+  it("sends the title on create and omits it when empty", async () => {
+    const f = fakeFetch(() => ({ status: 201, body: { code: "a" } }));
+    const c = createClient({ base: "https://go.test", apiKey: "k", fetchImpl: f });
+    await c.create("https://a.com", undefined, "Hello");
+    assert.deepEqual(JSON.parse(f.calls[0].init.body), { url: "https://a.com", title: "Hello" });
+    await c.create("https://a.com");
+    assert.deepEqual(JSON.parse(f.calls[1].init.body), { url: "https://a.com" });
+  });
+  it("update patches, remove deletes, with encoded codes", async () => {
+    const f = fakeFetch(() => ({ status: 200, body: {} }));
+    const c = createClient({ base: "https://go.test", apiKey: "k", fetchImpl: f });
+    await c.update("my-code", { newCode: "x", title: "" });
+    assert.equal(f.calls[0].init.method, "PATCH");
+    assert.deepEqual(JSON.parse(f.calls[0].init.body), { newCode: "x", title: "" });
+    await c.remove("my-code");
+    assert.equal(f.calls[1].init.method, "DELETE");
+    assert.equal(f.calls[1].url, "https://go.test/api/links/my-code");
+    assert.equal(f.calls[1].init.body, undefined);
+  });
+  it("listAll follows the cursor", async () => {
+    const pages = [{ links: [L("a"), L("b")], cursor: "c1" }, { links: [L("c")], cursor: null }];
+    const f = fakeFetch(() => ({ status: 200, body: pages.shift() }));
+    const c = createClient({ base: "https://go.test", apiKey: "k", fetchImpl: f });
+    const all = await c.listAll();
+    assert.deepEqual(all.map((l) => l.code), ["a", "b", "c"]);
+    assert.match(f.calls[1].url, /cursor=c1/);
+  });
+});
+
+describe("list helpers", () => {
+  it("sorts newest, oldest and by alias without mutating", () => {
+    const a = L("bbb", { createdAt: "2026-01-02T00:00:00.000Z" });
+    const b = L("aaa", { createdAt: "2026-01-03T00:00:00.000Z" });
+    const c = L("ccc", { createdAt: "2026-01-01T00:00:00.000Z" });
+    const input = [a, b, c];
+    assert.deepEqual(sortLinks(input, "newest").map((l) => l.code), ["aaa", "bbb", "ccc"]);
+    assert.deepEqual(sortLinks(input, "oldest").map((l) => l.code), ["ccc", "bbb", "aaa"]);
+    assert.deepEqual(sortLinks(input, "alias").map((l) => l.code), ["aaa", "bbb", "ccc"]);
+    assert.deepEqual(input.map((l) => l.code), ["bbb", "aaa", "ccc"]);
+  });
+  it("filters on code, url, title and creator, case-insensitively", () => {
+    const links = [L("docs", { title: "Team Handbook" }), L("sale", { createdBy: "Sam@lfcrea.com" }), L("zzz")];
+    assert.deepEqual(filterLinks(links, "HAND").map((l) => l.code), ["docs"]);
+    assert.deepEqual(filterLinks(links, "sam@").map((l) => l.code), ["sale"]);
+    assert.deepEqual(filterLinks(links, "example.com/zzz").map((l) => l.code), ["zzz"]);
+    assert.equal(filterLinks(links, "  ").length, 3);
+    assert.equal(filterLinks(links, "nomatch").length, 0);
+  });
+  it("formats relative times", () => {
+    const now = Date.parse("2026-06-15T12:00:00Z");
+    assert.equal(relativeTime("2026-06-15T11:59:50Z", now), "just now");
+    assert.equal(relativeTime("2026-06-15T11:00:00Z", now), "1 hour ago");
+    assert.equal(relativeTime("2026-06-14T12:00:00Z", now), "yesterday");
+    assert.equal(relativeTime("2026-06-08T12:00:00Z", now), "last week");
+    assert.equal(relativeTime("garbage", now), "");
+  });
+  it("labels short links", () => {
+    assert.equal(shortLabel("https://go.lfcrea.com", "abc"), "go.lfcrea.com/abc");
+    assert.equal(hostOf("not a url"), "not a url");
+  });
+});
+
+describe("toCsv", () => {
+  it("writes a header, quotes awkward cells and neutralises formulas", () => {
+    const csv = toCsv([
+      L("a", { title: 'He said "hi", ok' }),
+      L("b", { title: "=HYPERLINK(\"http://evil\")" }),
+      L("c", { title: "-2+3" }),
+    ], "https://go.test");
+    const lines = csv.split("\r\n");
+    assert.equal(lines[0], "code,short_url,destination,title,created_at,updated_at,created_by");
+    assert.match(lines[1], /^a,https:\/\/go\.test\/a,https:\/\/example\.com\/a,"He said ""hi"", ok",/);
+    assert.match(lines[2], /,"'=HYPERLINK\(""http:\/\/evil""\)",/);
+    assert.match(lines[3], /,'-2\+3,/);
+    assert.equal(lines.at(-1), "");
   });
 });

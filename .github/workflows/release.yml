@@ -42,11 +42,12 @@ jobs:
       - name: Build zip
         if: steps.v.outputs.publish == 'true'
         run: |
-          zip -r "lfgo-extension-${{ steps.v.outputs.ver }}.zip" \
-            manifest.json background.js shared.js \
+          zip -r "lf-go-extension-${{ steps.v.outputs.ver }}.zip" \
+            manifest.json background.js shared.js qr.js ui.js \
             popup.html popup.css popup.js \
+            manage.html manage.css manage.js \
             options.html options.css options.js \
-            theme.css icons INSTALL.txt
+            theme.css icons fonts vendor INSTALL.txt
 
       - name: Publish release
         if: steps.v.outputs.publish == 'true'
@@ -54,7 +55,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           ver="${{ steps.v.outputs.ver }}"
-          gh release create "extension-v$ver" "lfgo-extension-$ver.zip" \
+          gh release create "extension-v$ver" "lf-go-extension-$ver.zip" \
             --target "$GITHUB_SHA" \
-            --title "lfgo short links $ver" \
-            --notes "Download **lfgo-extension-$ver.zip**, unzip it, then follow INSTALL.txt (Load unpacked in chrome://extensions). It needs the matching Worker deployed from branch claude/links-worker."
+            --title "LF GO $ver" \
+            --notes "Download **lf-go-extension-$ver.zip**, unzip it, then follow INSTALL.txt (Load unpacked in chrome://extensions). It needs the matching Worker deployed from branch claude/links-worker (this version stores page titles, so redeploy the Worker if you have not since 0.2.0)."

@@ -3,43 +3,70 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>lfgo short links</title>
+  <title>LF GO</title>
   <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <main>
-    <header>
-      <h1>Short link</h1>
-      <a id="open-options" href="#" class="muted">Options</a>
+    <header class="top">
+      <div class="brand"><img src="icons/icon48.png" alt=""><span>LF GO</span></div>
+      <div class="top-actions">
+        <button id="manage" class="icon-btn" type="button" title="Manage all links" aria-label="Manage all links"><span data-icon="list"></span></button>
+        <button id="settings" class="icon-btn" type="button" title="Settings" aria-label="Settings"><span data-icon="settings"></span></button>
+      </div>
     </header>
 
-    <p id="loading" class="muted">Creating your link…</p>
-
-    <section id="setup" hidden>
-      <p>Add your API key to get started.</p>
-      <button id="setup-btn" class="primary" type="button">Open options</button>
+    <section id="setup" class="card" hidden>
+      <h2>Connect LF GO</h2>
+      <p class="muted">Add your API key in settings to start creating links.</p>
+      <button id="setup-btn" class="btn primary" type="button">Open settings</button>
     </section>
 
-    <section id="blocked" hidden>
+    <section id="blocked" class="card" hidden>
       <p id="blocked-text"></p>
     </section>
 
-    <section id="ready" hidden>
-      <label for="alias" class="muted">Short link</label>
-      <div class="row link-row">
-        <span id="prefix" class="prefix"></span>
-        <input id="alias" type="text" spellcheck="false" autocomplete="off" autocapitalize="off" maxlength="32" aria-describedby="status">
-      </div>
-      <div class="row actions">
-        <button id="save" class="primary" type="button" disabled>Save</button>
-        <button id="copy" type="button">Copy</button>
-      </div>
-      <p id="status" class="msg" role="status" aria-live="polite"></p>
-      <p class="dest muted" title=""><span>Points to </span><span id="dest"></span></p>
+    <section id="failed" class="card" hidden>
+      <p id="failed-text" class="msg err" role="alert"></p>
+      <button id="retry" class="btn" type="button">Try again</button>
     </section>
 
-    <p id="error" class="msg err" role="alert" hidden></p>
+    <section id="ready" hidden>
+      <label for="alias" class="field-label">Short link</label>
+      <div class="field">
+        <span id="prefix" class="prefix"></span>
+        <input id="alias" type="text" spellcheck="false" autocomplete="off" autocapitalize="off" maxlength="32" aria-describedby="status">
+        <button id="copy" class="icon-btn" type="button" title="Copy short link" aria-label="Copy short link"><span data-icon="copy"></span></button>
+      </div>
+      <p id="status" class="msg" role="status" aria-live="polite"></p>
+      <button id="save" class="btn primary block" type="button" hidden>Save alias</button>
+
+      <div class="qr-card card">
+        <div id="qr-frame" class="qr-frame skeleton"><canvas id="qr" width="144" height="144" aria-label="QR code for the short link" role="img"></canvas></div>
+        <div class="qr-side">
+          <p class="qr-title">QR code</p>
+          <p class="muted qr-hint">Scan to open the link</p>
+          <div class="qr-actions">
+            <button id="qr-png" class="btn small" type="button"><span data-icon="download"></span>PNG</button>
+            <button id="qr-svg" class="btn small" type="button"><span data-icon="download"></span>SVG</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="dest">
+        <p id="dest-title" class="dest-title"></p>
+        <p id="dest-url" class="dest-url muted"></p>
+      </div>
+    </section>
+
+    <section id="recent" class="recent" hidden>
+      <div class="recent-head">
+        <h2>Recent links</h2>
+        <a id="see-all" href="#">See all</a>
+      </div>
+      <ul id="recent-list" class="recent-list"></ul>
+    </section>
   </main>
   <script type="module" src="popup.js"></script>
 </body>

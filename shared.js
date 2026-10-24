@@ -101,9 +101,28 @@ export function createClient({ base, apiKey, fetchImpl = (...a) => fetch(...a) }
       const data = await request("GET", `/api/links?url=${encodeURIComponent(url)}`);
       return data.links?.[0] ?? null;
     },
-    create: (url, alias) => request("POST", "/api/links", alias ? { url, alias } : { url }),
+    create: (url, alias, title) =>
+      request("POST", "/api/links", {
+        url,
+        ...(alias ? { alias } : {}),
+        ...(title ? { title } : {}),
+      }),
+    /** Change any of { newCode, url, title }; title "" clears it. */
+    update: (code, patch) => request("PATCH", `/api/links/${encodeURIComponent(code)}`, patch),
     rename: (code, newCode) => request("PATCH", `/api/links/${encodeURIComponent(code)}`, { newCode }),
+    remove: (code) => request("DELETE", `/api/links/${encodeURIComponent(code)}`),
     list: (limit = 1) => request("GET", `/api/links?limit=${limit}`),
+    /** Every link, following the pagination cursor. */
+    async listAll() {
+      const all = [];
+      let cursor = null;
+      do {
+        const page = await request("GET", `/api/links?limit=500${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
+        all.push(...(page.links ?? []));
+        cursor = page.cursor ?? null;
+      } while (cursor);
+      return all;
+    },
   };
 }
 
@@ -120,4 +139,64 @@ export function saveSettings(settings, area = chrome.storage.local) {
 
 export function removeApiKey(area = chrome.storage.local) {
   return area.remove("apiKey");
+}
+
+// ---------------------------------------------------------------------------
+// Helpers for showing and managing lists of links.
+
+export const hostOf = (url) => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+};
+
+/** "go.example.com/abc" for display. */
+export const shortLabel = (base, code) => `${hostOf(base)}/${code}`;
+
+export function sortLinks(links, how = "newest") {
+  const out = [...links];
+  const byDate = (a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0);
+  if (how === "oldest") out.sort(byDate);
+  else if (how === "alias") out.sort((a, b) => a.code.localeCompare(b.code));
+  else out.sort((a, b) => byDate(b, a));
+  return out;
+}
+
+/** Case-insensitive match on code, destination, title and creator. */
+export function filterLinks(links, query) {
+  const q = String(query ?? "").trim().toLowerCase();
+  if (!q) return links;
+  return links.filter((l) =>
+    [l.code, l.url, l.title, l.createdBy].some((v) => typeof v === "string" && v.toLowerCase().includes(q)),
+  );
+}
+
+const RTF = typeof Intl !== "undefined" ? new Intl.RelativeTimeFormat("en", { numeric: "auto" }) : null;
+
+/** "3 days ago", "yesterday", "just now". */
+export function relativeTime(iso, now = Date.now()) {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  const sec = Math.round((t - now) / 1000);
+  if (Math.abs(sec) < 45) return "just now";
+  const steps = [["year", 31536000], ["month", 2592000], ["week", 604800], ["day", 86400], ["hour", 3600], ["minute", 60]];
+  for (const [unit, size] of steps) {
+    if (Math.abs(sec) >= size) return RTF.format(Math.round(sec / size), unit);
+  }
+  return RTF.format(sec, "second");
+}
+
+const csvCell = (value) => {
+  let v = value == null ? "" : String(value);
+  // Spreadsheet formula injection: neutralise cells that would be evaluated.
+  if (/^[=+\-@\t\r]/.test(v)) v = `'${v}`;
+  return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+};
+
+export function toCsv(links, base) {
+  const head = ["code", "short_url", "destination", "title", "created_at", "updated_at", "created_by"];
+  const rows = links.map((l) => [l.code, `${base}/${l.code}`, l.url, l.title, l.createdAt, l.updatedAt, l.createdBy]);
+  return [head, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
 }
