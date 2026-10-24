@@ -17,9 +17,9 @@
     // Public base used to build `shortUrl` in API responses.
     "SHORT_BASE_URL": "https://go.lfcrea.com",
     // Comma-separated browser origins allowed to call /api/*. This is the
-    // Chrome extension in ../extension (its id is fixed by the "key" in its
-    // manifest). The wacrm server calls the API server-side, so it does not
-    // need to be listed.
+    // Chrome extension on branch claude/links-extension (its id is fixed by
+    // the "key" in its manifest.json). The wacrm server calls the API
+    // server-side, so it does not need to be listed.
     "ALLOWED_ORIGINS": "chrome-extension://bfdicajogngofgmdnilbhmpliocicbpi"
   }
 
