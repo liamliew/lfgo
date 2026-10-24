@@ -7,6 +7,7 @@ import { FakeKV } from "./fake-kv";
 const SUPABASE = "https://lfid.supabase.co";
 const ISS = `${SUPABASE}/auth/v1`;
 const JWKS_URL = `${ISS}/.well-known/jwks.json`;
+const USER_URL = `${ISS}/user`;
 const NOW = Date.parse("2026-10-24T10:00:00Z");
 const enc = new TextEncoder();
 const b64u = (b: ArrayBuffer | Uint8Array | string) => {
@@ -43,6 +44,8 @@ let other: Signer;
 let jwks: { keys: unknown[] };
 let jwksCalls = 0;
 let jwksDown = false;
+let userCalls: { headers: Record<string, string> }[] = [];
+let userReply: { status: number; body?: unknown } | "network" = { status: 401, body: { msg: "invalid JWT" } };
 let env: Env;
 let kv: FakeKV;
 
@@ -55,14 +58,21 @@ beforeEach(async () => {
   jwks = { keys: [signer.jwk] };
   jwksCalls = 0;
   jwksDown = false;
-  vi.stubGlobal("fetch", async (url: string) => {
+  userCalls = [];
+  userReply = { status: 401, body: { msg: "invalid JWT" } };
+  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+    if (String(url) === USER_URL) {
+      userCalls.push({ headers: Object.fromEntries(Object.entries((init?.headers ?? {}) as Record<string, string>)) });
+      if (userReply === "network") throw new Error("network");
+      return new Response(JSON.stringify(userReply.body ?? {}), { status: userReply.status });
+    }
     if (String(url) !== JWKS_URL) throw new Error("unexpected fetch " + url);
     jwksCalls++;
     if (jwksDown) throw new Error("network");
     return new Response(JSON.stringify(jwks), { status: 200, headers: { "content-type": "application/json" } });
   });
   kv = new FakeKV();
-  env = { LINKS: kv as unknown as KVNamespace, API_KEY: "the-api-key", SUPABASE_URL: SUPABASE, SHORT_BASE_URL: "https://go.test" };
+  env = { LINKS: kv as unknown as KVNamespace, API_KEY: "the-api-key", SUPABASE_URL: SUPABASE, SUPABASE_PUBLISHABLE_KEY: "sb_publishable_test", SHORT_BASE_URL: "https://go.test" };
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -97,13 +107,20 @@ describe("verifyAccessToken", () => {
     const evil = b64u(JSON.stringify(goodClaims({ email: "ceo@lfcrea.com" })));
     await expectDeny(`${h}.${evil}.${s}`, "invalid_token");
   });
-  it("rejects alg none and HS256 (key-confusion) tokens", async () => {
-    const noneH = b64u(JSON.stringify({ alg: "none", typ: "JWT", kid: "key-1" }));
+  it("rejects alg none and unknown algorithms outright", async () => {
     const p = b64u(JSON.stringify(goodClaims()));
-    await expectDeny(`${noneH}.${p}.`, "invalid_token");
-    const hsH = b64u(JSON.stringify({ alg: "HS256", typ: "JWT", kid: "key-1" }));
+    for (const alg of ["none", "ES384", "PS256", "HS512"]) {
+      const h = b64u(JSON.stringify({ alg, typ: "JWT", kid: "key-1" }));
+      await expectDeny(`${h}.${p}.${alg === "none" ? "" : "c2ln"}`, "invalid_token");
+    }
+    expect(userCalls).toHaveLength(0);
+  });
+  it("never trusts an HS256 token's own signature: the Auth server decides (forged => rejected)", async () => {
+    const hsH = b64u(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+    const p = b64u(JSON.stringify(goodClaims()));
     const mac = await crypto.subtle.sign("HMAC", await crypto.subtle.importKey("raw", enc.encode(JSON.stringify(signer.jwk)), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]), enc.encode(`${hsH}.${p}`));
     await expectDeny(`${hsH}.${p}.${b64u(mac)}`, "invalid_token");
+    expect(userCalls).toHaveLength(1);
   });
   it("rejects wrong issuer, audience and role", async () => {
     await expectDeny(await sign(signer, goodClaims({ iss: "https://evil.supabase.co/auth/v1" })), "invalid_token");
@@ -213,5 +230,89 @@ describe("API authentication", () => {
   it("the public redirect route needs no sign-in", async () => {
     await call({ "x-api-key": "the-api-key", "content-type": "application/json" }, "POST");
     expect((await worker.fetch(new Request("https://go.test/nothing"), env)).status).toBe(404);
+  });
+});
+
+
+describe("legacy HS256 tokens, checked by the Auth server", () => {
+  const hs = (claims: object = goodClaims()) => `${b64u(JSON.stringify({ alg: "HS256", typ: "JWT" }))}.${b64u(JSON.stringify(claims))}.c2ln`;
+  const userBody = (over: Record<string, unknown> = {}) => ({
+    id: "user-1", email: "Sam@LFCrea.com", app_metadata: { provider: "google" }, user_metadata: { email_verified: true }, ...over,
+  });
+
+  it("accepts a token the Auth server vouches for, sending the publishable key and the user's token", async () => {
+    userReply = { status: 200, body: userBody() };
+    const token = hs();
+    const r = await verify(token);
+    expect(r).toEqual({ ok: true, identity: { kind: "user", email: "sam@lfcrea.com", sub: "user-1" } });
+    expect(userCalls).toHaveLength(1);
+    expect(userCalls[0].headers.apikey).toBe("sb_publishable_test");
+    expect(userCalls[0].headers.authorization).toBe(`Bearer ${token}`);
+  });
+  it("caches a successful check for a minute, then asks again", async () => {
+    userReply = { status: 200, body: userBody() };
+    const token = hs();
+    await verify(token);
+    await verifyAccessToken(token, env, NOW + 30_000);
+    expect(userCalls).toHaveLength(1);
+    await verifyAccessToken(token, env, NOW + 61_000);
+    expect(userCalls).toHaveLength(2);
+  });
+  it("does not cache failures, so a revoked session stops working", async () => {
+    userReply = { status: 200, body: userBody() };
+    const token = hs();
+    expect((await verify(token)).ok).toBe(true);
+    userReply = { status: 401, body: {} };
+    expect((await verifyAccessToken(token, env, NOW + 61_000)).ok).toBe(false);
+  });
+  it("applies the same account rules to the Auth server's answer", async () => {
+    for (const [over, code] of [
+      [{ email: "x@gmail.com" }, "wrong_domain"],
+      [{ email: "x@lfcrea.com.evil.io" }, "wrong_domain"],
+      [{ app_metadata: { provider: "email" } }, "wrong_provider"],
+      [{ user_metadata: { email_verified: false } }, "wrong_provider"],
+      [{ id: "someone-else" }, "invalid_token"],
+    ] as const) {
+      resetAuthCache();
+      userReply = { status: 200, body: userBody(over) };
+      await expectDeny(hs(), code);
+    }
+  });
+  it("a rejected token stays rejected on every later try (failures are never cached as successes)", async () => {
+    userReply = { status: 200, body: userBody({ email: "x@gmail.com" }) };
+    const token = hs();
+    await expectDeny(token, "wrong_domain");
+    await expectDeny(token, "wrong_domain");
+    userReply = { status: 401, body: {} };
+    const other = hs(goodClaims({ sub: "user-2" }));
+    await expectDeny(other, "invalid_token");
+    await expectDeny(other, "invalid_token");
+  });
+  it("answers 503 when the Auth server is unreachable or erroring, and 401 when it says no", async () => {
+    userReply = "network";
+    await expectDeny(hs(), "auth_unavailable", 503);
+    userReply = { status: 502 };
+    await expectDeny(hs(), "auth_unavailable", 503);
+    userReply = { status: 403, body: { msg: "banned" } };
+    await expectDeny(hs(), "invalid_token");
+  });
+  it("is 503 auth_misconfigured without the publishable key, and never forwards junk", async () => {
+    env.SUPABASE_PUBLISHABLE_KEY = "";
+    await expectDeny(hs(), "auth_misconfigured", 503);
+    env.SUPABASE_PUBLISHABLE_KEY = "sb_publishable_test";
+    await expectDeny(hs(goodClaims({ iss: "https://evil.supabase.co/auth/v1" })), "invalid_token");
+    await expectDeny(hs(goodClaims({ aud: "anon" })), "invalid_token");
+    await expectDeny(hs(goodClaims({ exp: Math.floor(NOW / 1000) - 3600 })), "token_expired");
+    await expectDeny(hs(goodClaims({ sub: "" })), "invalid_token");
+    expect(userCalls).toHaveLength(0);
+  });
+  it("works end to end on the API", async () => {
+    userReply = { status: 200, body: userBody() };
+    const res = await worker.fetch(new Request("https://go.test/api/links", { headers: { authorization: `Bearer ${hs()}` } }), env);
+    expect(res.status).toBe(200);
+    userReply = { status: 401, body: {} };
+    resetAuthCache();
+    const bad = await worker.fetch(new Request("https://go.test/api/links", { headers: { authorization: `Bearer ${hs()}` } }), env);
+    expect(bad.status).toBe(401);
   });
 });

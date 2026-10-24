@@ -33,27 +33,31 @@ the shortener's own host.
 ## Google sign-in (LF ID)
 
 Team members sign in with their `@lfcrea.com` Google account instead of pasting an
-API key. A separate Supabase project ("LF ID") runs the Google login; this Worker
-only **verifies** the access tokens it issues:
+API key. A Supabase project (currently **LF Creative**) runs the Google login; this
+Worker only **verifies** the access tokens it issues. Setup: `LF-ID-SETUP.md`.
 
-- Signature checked against the project's public keys at
-  `<SUPABASE_URL>/auth/v1/.well-known/jwks.json` (cached 5 minutes; refetched, at
-  most every 30 s, when a token names an unknown key). Only ES256/RS256 are
-  accepted, never HS256 or `none`. This needs the project to use **asymmetric JWT
-  signing keys** (Supabase dashboard, Settings -> JWT Keys); the endpoint returns no
-  keys otherwise.
-- Claims checked: issuer = `<SUPABASE_URL>/auth/v1`, audience and role
-  `authenticated`, not expired (30 s skew), email on `ALLOWED_EMAIL_DOMAIN`
-  (default `lfcrea.com`, exact match), `app_metadata.provider` = `google` and a
-  verified email, so email+password sign-ups cannot get in even with a matching
-  address.
-- Errors: 401 with a `code` (`invalid_token`, `token_expired`, `wrong_domain`,
-  `wrong_provider`, `sign_in_disabled`); 503 `auth_unavailable` if the key endpoint
-  cannot be reached (clients stay signed in and can retry).
-- Turning it on: set `SUPABASE_URL` in `wrangler.jsonc` (a public value, not a
-  secret) and deploy. Until then Bearer JWTs get `sign_in_disabled` and only the
-  API key works. The API key keeps working alongside, as the admin / server-to-server
-  route; with sign-in on you may remove the `API_KEY` secret if you no longer want it.
+- **Two ways to check a token**, chosen by the token's header:
+  - **ES256 / RS256** (asymmetric signing keys): the signature is verified here against
+    the project's public keys at `<SUPABASE_URL>/auth/v1/.well-known/jwks.json` (cached
+    5 minutes; refetched, at most every 30 s, when a token names an unknown key).
+  - **HS256** (the legacy shared secret): never verified locally. As Supabase's docs
+    recommend, the Worker asks the Auth server (`GET /auth/v1/user` with the
+    `SUPABASE_PUBLISHABLE_KEY` and the user's token). A successful answer is cached for
+    up to a minute; failures are never cached. Because the Auth server is in one
+    region, expect an extra round trip at most once a minute per token.
+  - Any other algorithm (including `none`) is rejected.
+- **Claims / account checked** (both ways): issuer = `<SUPABASE_URL>/auth/v1`, audience
+  `authenticated`, not expired (30 s skew), email on `ALLOWED_EMAIL_DOMAIN` (default
+  `lfcrea.com`, exact match), `app_metadata.provider` = `google` and a verified email,
+  so email+password sign-ups cannot get in even with a matching address.
+- **Errors:** 401 with a `code` (`invalid_token`, `token_expired`, `wrong_domain`,
+  `wrong_provider`, `sign_in_disabled`); 503 `auth_unavailable` if the key or Auth
+  endpoint cannot be reached (clients stay signed in and can retry); 503
+  `auth_misconfigured` if an HS256 token arrives but `SUPABASE_PUBLISHABLE_KEY` is unset.
+- **Turning it on:** set `SUPABASE_URL` (and `SUPABASE_PUBLISHABLE_KEY`) in
+  `wrangler.jsonc`; both are public values, not secrets. Empty `SUPABASE_URL` leaves
+  only the API key. The API key keeps working alongside, as the admin /
+  server-to-server route; with sign-in on you may remove the `API_KEY` secret.
 - Every signed-in user currently has the same access as the API key (everyone sees
   and manages all links). Who created a link is not recorded yet.
 

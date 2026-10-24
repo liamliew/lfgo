@@ -21,9 +21,12 @@
     // the "key" in its manifest.json). The wacrm server calls the API
     // server-side, so it does not need to be listed.
     "ALLOWED_ORIGINS": "chrome-extension://bfdicajogngofgmdnilbhmpliocicbpi",
-    // Google sign-in ("LF ID"). Fill SUPABASE_URL with the Supabase project's URL
-    // (https://<ref>.supabase.co) to turn it on; empty leaves only the API key.
-    "SUPABASE_URL": "",
+    // Google sign-in ("LF ID"): the LF Creative Supabase project. Public values, not secrets.
+    // Empty SUPABASE_URL turns sign-in off and leaves only the API key.
+    "SUPABASE_URL": "https://vxgtywdqijtfnkgyubkh.supabase.co",
+    // The project's publishable key. Only used to ask the Auth server to check tokens signed
+    // with the legacy shared secret (HS256); harmless if the project uses asymmetric keys.
+    "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_SiacCN613xiw-7RZvtt1wg__R0Zte_u",
     // Only Google accounts on this email domain are let in.
     "ALLOWED_EMAIL_DOMAIN": "lfcrea.com"
   },

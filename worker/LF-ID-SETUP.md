@@ -1,63 +1,82 @@
-# LF ID: Google sign-in setup
+# LF ID: Google sign-in setup (using the LF Creative project)
 
-One-time setup so people sign in with their `@lfcrea.com` Google account instead of
-sharing an API key. "LF ID" is a dedicated Supabase project that only handles sign-in;
-the Worker verifies the tokens it issues (see "Google sign-in (LF ID)" in the README).
+People sign in with their `@lfcrea.com` Google account instead of sharing an API key.
+"LF ID" is the **LF Creative** Supabase project (`vxgtywdqijtfnkgyubkh`, region
+ap-southeast-2), which already has Google sign-in set up. The Worker only verifies the
+tokens it issues (see "Google sign-in (LF ID)" in the README).
 
-Three layers each enforce the domain, so one mistake does not open the door:
+## What is already done
 
-1. **Google** (OAuth consent screen set to *Internal*): Google refuses accounts outside
-   your Workspace organisation. This needs `lfcrea.com` to be a Google Workspace domain.
-2. **Supabase** (the hook below): rejects any sign-up whose email is not `@lfcrea.com`.
-3. **The Worker**: rejects tokens whose email is not `@lfcrea.com`, or whose account is
-   not a verified Google account.
+- The Worker (`wrangler.jsonc`) points at the project: `SUPABASE_URL` and
+  `SUPABASE_PUBLISHABLE_KEY` (both public values).
+- The extension (`config.js` on branch `claude/links-extension`) has the same two values.
+- The Worker accepts both ways Supabase can sign tokens (public-key ES256/RS256, or the
+  legacy shared-secret HS256 checked via the Auth server), so nothing about the project's
+  signing keys needs to change.
 
-## 1. Create the Supabase project
+## What you do (one step)
 
-Dashboard -> New project. Name it `LF ID`, pick the region closest to your team, set a
-database password and keep it somewhere safe. Use a **separate project**: do not reuse
-the WA CRM or LF Creative projects.
-
-Then **Project Settings -> JWT Keys**: the project should use an **asymmetric** signing
-key (ES256 or RS256). Check by opening
-`https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json`: it must list at least
-one key. If it shows `{"keys":[]}`, use the "Migrate JWT secret" button on that page and
-rotate to an asymmetric key (Supabase docs: Auth -> Signing keys). The Worker only
-accepts asymmetric tokens.
-
-## 2. Google Cloud: OAuth client
-
-[console.cloud.google.com](https://console.cloud.google.com), signed in as a Workspace admin:
-
-1. Create (or pick) a project.
-2. **Google Auth Platform / OAuth consent screen**: user type **Internal**. App name
-   `LFC Tools`. Scopes: `openid`, `email`, `profile` (the defaults).
-3. **Credentials -> Create credentials -> OAuth client ID -> Web application.**
-   Under **Authorized redirect URIs** add
-   `https://<project-ref>.supabase.co/auth/v1/callback`.
-4. Copy the **Client ID** and **Client secret**.
-
-## 3. Turn on Google in Supabase
-
-Dashboard -> **Authentication -> Sign In / Providers**:
-
-- **Google**: enable, paste the Client ID and secret, save.
-- **Email**: turn the provider **off**. Email + password sign-ups would otherwise be
-  possible. (The Worker also refuses non-Google accounts, but there is no reason to
-  leave this door open.)
-
-Dashboard -> **Authentication -> URL Configuration -> Redirect URLs**: add
+In the Supabase dashboard for **LF Creative**: **Authentication -> URL Configuration ->
+Redirect URLs -> Add URL**:
 
 ```
 https://bfdicajogngofgmdnilbhmpliocicbpi.chromiumapp.org/
 ```
 
-That is the extension's redirect address (it is also shown on the extension's Settings
-page, under "Server setup"). The extension's id is fixed by the `key` in its manifest.
+That is the extension's sign-in return address (also shown on the extension's Settings
+page, under "Server setup"; its id is fixed by the `key` in its manifest). Without it
+Supabase refuses to send the browser back to the extension.
 
-## 4. The domain hook (Supabase side)
+## How the domain is enforced
 
-Run this in the Supabase **SQL Editor**:
+Because LF Creative is a live app that also has non-`lfcrea.com` users, the project is
+**not** restricted to one domain, and the "before user created" hook from the generic
+guide is deliberately **not** used (it would block those users). Enforcement is:
+
+1. **The extension** only accepts a session for an `@lfcrea.com` email.
+2. **The Worker** rejects any token whose email is not exactly `@lfcrea.com`, or whose
+   account is not a verified Google account. This is the real gate: a personal Gmail
+   account can sign in to LF Creative but cannot use the link API.
+3. *(Optional, in Google Cloud)* an OAuth consent screen set to **Internal** would also
+   stop outside accounts at Google, but that would break LF Creative's non-Workspace
+   users, so leave it as is.
+
+## Side effects to know about
+
+- **First sign-in creates an LF Creative account.** The first time someone signs in
+  through LFC Tools, Supabase creates a user for them in LF Creative, exactly as if they
+  had signed in to the LF Creative app. Anything that app does for new users (profile
+  rows, access requests) applies.
+- **Removing someone** from link access: delete or ban them in Authentication -> Users.
+  Their current access token works until it expires (default 1 hour) but they cannot
+  refresh it. Changing `ALLOWED_EMAIL_DOMAIN` or removing the account's `@lfcrea.com`
+  address also cuts access.
+- **Revocation is quicker for legacy-signed tokens:** the Worker re-asks the Auth server
+  at least once a minute, so a deleted or banned user is cut off within about a minute.
+
+## Check it
+
+1. Install the new extension build, open Settings, click **Sign in with Google**, pick
+   your `@lfcrea.com` account: it should say "Signed in as ...".
+2. Click the extension icon on a page: a link is created, with no API key involved.
+3. Sign in with a personal Gmail account: the extension refuses it ("Only @lfcrea.com
+   accounts can sign in"), and the Worker would too.
+4. Sign out in Settings; the popup asks you to sign in again.
+
+## Heads-up about LF Creative itself (not changed)
+
+Supabase's checker reports five tables in LF Creative with Row Level Security **off**
+(`project_shares`, `drives`, `files`, `project_file_refs`, `nas_folders`). Anyone holding
+that project's public (anon) key can read and change them. That is unrelated to link
+sign-in and I have not changed anything, but it is worth fixing: enable RLS and add the
+policies your app needs.
+
+## If you ever want a dedicated project instead
+
+Create a new Supabase project, enable Google, point `SUPABASE_URL` /
+`SUPABASE_PUBLISHABLE_KEY` (Worker) and `config.js` (extension) at it, and add the
+redirect URL above. A dedicated project can also use a "before user created" hook to
+allow only `@lfcrea.com` sign-ups, because it has no other users to break:
 
 ```sql
 create or replace function public.hook_restrict_signup_by_email_domain(event jsonb)
@@ -71,10 +90,7 @@ begin
     return '{}'::jsonb;
   end if;
   return jsonb_build_object(
-    'error', jsonb_build_object(
-      'message', 'Only lfcrea.com accounts are allowed.',
-      'http_code', 403
-    )
+    'error', jsonb_build_object('message', 'Only lfcrea.com accounts are allowed.', 'http_code', 403)
   );
 end;
 $$;
@@ -83,40 +99,4 @@ grant execute on function public.hook_restrict_signup_by_email_domain to supabas
 revoke execute on function public.hook_restrict_signup_by_email_domain from authenticated, anon, public;
 ```
 
-Then **Authentication -> Hooks -> Before User Created**: choose *Postgres function*,
-select `public.hook_restrict_signup_by_email_domain`, enable it. (Format per the
-Supabase "Before User Created Hook" docs: `{}` allows, an `error` object with a 4xx
-`http_code` blocks.)
-
-## 5. Point the Worker and the extension at the project
-
-1. `worker/wrangler.jsonc`: set `"SUPABASE_URL": "https://<project-ref>.supabase.co"`
-   (a public value, not a secret), commit and push. Cloudflare redeploys. Until this is
-   set, signed-in requests get `sign_in_disabled` and only the API key works.
-2. Extension branch `claude/links-extension`, `config.js`: set `SUPABASE_URL` to the
-   same URL and `SUPABASE_PUBLISHABLE_KEY` to the project's **publishable** key
-   (Project Settings -> API Keys). Both are public. **Never** put the secret /
-   service-role key in the extension. Bump `version` in `manifest.json` and push to
-   publish a release.
-
-## 6. Check it
-
-1. Install the new extension build, open Settings, click **Sign in with Google**, pick
-   your `@lfcrea.com` account: it should say "Signed in as ...".
-2. Click the extension icon on a page: a link is created (no API key involved).
-3. Try an account outside the domain (a personal Gmail): it must be refused, by Google
-   if the consent screen is Internal, otherwise by the hook ("Only lfcrea.com accounts
-   are allowed").
-4. Sign out in Settings, then confirm the popup asks you to sign in again.
-
-## Operating notes
-
-- **Removing someone:** Supabase -> Authentication -> Users -> delete (or ban) the user.
-  Their current access token keeps working until it expires (default 1 hour, Settings ->
-  JWT Keys / Auth); they cannot refresh it.
-- **Session length:** the extension refreshes tokens automatically, so people stay
-  signed in until the refresh is rejected or they sign out.
-- **Who created a link** is not recorded yet; the "Created by" column in the manage
-  page fills in once the Worker starts storing the signed-in email.
-- **The API key** keeps working as the admin / script route. Rotate it with
-  `wrangler secret put API_KEY` if it ever leaks.
+Then enable it under Authentication -> Hooks -> Before User Created.

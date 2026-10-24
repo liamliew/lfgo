@@ -1,7 +1,12 @@
 // Verifies "LF ID" sign-ins: access tokens issued by the Supabase Auth project in
-// SUPABASE_URL after a Google login. Only ES256/RS256 tokens signed by a key in the
-// project's JWKS are accepted (never HS256, never "none"), and the account must be a
-// verified Google account on ALLOWED_EMAIL_DOMAIN.
+// SUPABASE_URL after a Google login. The account must be a verified Google account on
+// ALLOWED_EMAIL_DOMAIN. Two ways to check a token, chosen by its header:
+//   - ES256 / RS256 (asymmetric signing keys): the signature is verified here against the
+//     project's JWKS.
+//   - HS256 (the legacy shared secret): never verified locally, since that would need the
+//     secret. Supabase's docs say to ask the Auth server instead (GET /auth/v1/user), so
+//     that is what we do, with a short cache.
+// Anything else ("none", other algorithms) is rejected.
 //
 // Supabase docs (Auth > JWTs): the public keys are served at
 // <project>/auth/v1/.well-known/jwks.json and must not be cached for longer than
@@ -23,6 +28,8 @@ export type VerifyResult =
 const JWKS_TTL_MS = 5 * 60 * 1000;
 const JWKS_MIN_REFETCH_MS = 30 * 1000; // at most one extra fetch per 30 s for unknown key ids
 const CLOCK_SKEW_S = 30;
+const SERVER_CHECK_TTL_MS = 60 * 1000;
+const SERVER_CACHE_MAX = 500;
 
 interface Jwk {
   kty: string;
@@ -37,10 +44,12 @@ interface JwksCache {
   fetchedAt: number;
 }
 let cache: JwksCache | null = null;
+const serverChecks = new Map<string, { until: number; identity: UserIdentity }>();
 
 /** For tests. */
 export function resetAuthCache() {
   cache = null;
+  serverChecks.clear();
 }
 
 const fromB64 = (s: string): Uint8Array => {
@@ -76,6 +85,72 @@ async function loadKeys(env: Env, kid: string, now: number): Promise<Jwk[] | "un
 
 const deny = (code: string, message: string): VerifyResult => ({ ok: false, status: 401, code, message });
 
+/** The account rules shared by both verification paths. */
+function checkAccount(
+  env: Env,
+  email: unknown,
+  appMetadata: any,
+  userMetadata: any,
+  sub: string,
+): VerifyResult {
+  const clean = typeof email === "string" ? email.trim().toLowerCase() : "";
+  const [local, domain, ...rest] = clean.split("@");
+  if (!local || !domain || rest.length > 0 || domain !== allowedDomain(env)) {
+    return deny("wrong_domain", `Only @${allowedDomain(env)} accounts can use this`);
+  }
+  if (appMetadata?.provider !== "google" || userMetadata?.email_verified !== true) {
+    return deny("wrong_provider", "Sign in with your Google account");
+  }
+  return { ok: true, identity: { kind: "user", email: clean, sub } };
+}
+
+const sha256Hex = async (s: string) =>
+  [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+
+/** Legacy (HS256) tokens: let the Auth server vouch for them. */
+async function verifyWithAuthServer(token: string, claims: any, env: Env, now: number): Promise<VerifyResult> {
+  if (!env.SUPABASE_PUBLISHABLE_KEY?.trim()) {
+    return { ok: false, status: 503, code: "auth_misconfigured", message: "Sign-in is not fully set up on the server" };
+  }
+  // Cheap checks on the unverified claims, so junk is never forwarded to the Auth server.
+  const nowS = Math.floor(now / 1000);
+  const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+  if (claims.iss !== issuerOf(env) || !aud.includes("authenticated") || typeof claims.sub !== "string" || !claims.sub) {
+    return deny("invalid_token", "Token was not issued by this sign-in service");
+  }
+  if (typeof claims.exp !== "number" || claims.exp + CLOCK_SKEW_S < nowS) return deny("token_expired", "Your session has expired. Sign in again");
+
+  const key = await sha256Hex(token);
+  const hit = serverChecks.get(key);
+  if (hit && hit.until > now) return { ok: true, identity: hit.identity };
+
+  let res: Response;
+  try {
+    res = await fetch(`${issuerOf(env)}/user`, {
+      headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY.trim(), authorization: `Bearer ${token}`, accept: "application/json" },
+    });
+  } catch {
+    return { ok: false, status: 503, code: "auth_unavailable", message: "Could not reach the sign-in service to check your session" };
+  }
+  if (res.status >= 500 || res.status === 429) {
+    return { ok: false, status: 503, code: "auth_unavailable", message: "Could not reach the sign-in service to check your session" };
+  }
+  if (!res.ok) return deny("invalid_token", "Your session is not valid. Sign in again");
+  let user: any;
+  try {
+    user = await res.json();
+  } catch {
+    return deny("invalid_token", "Your session is not valid. Sign in again");
+  }
+  if (!user || user.id !== claims.sub) return deny("invalid_token", "Your session is not valid. Sign in again");
+  const verdict = checkAccount(env, user.email, user.app_metadata, user.user_metadata, user.id);
+  if (verdict.ok) {
+    if (serverChecks.size >= SERVER_CACHE_MAX) serverChecks.clear();
+    serverChecks.set(key, { until: Math.min(now + SERVER_CHECK_TTL_MS, claims.exp * 1000), identity: verdict.identity });
+  }
+  return verdict;
+}
+
 export async function verifyAccessToken(token: string, env: Env, now = Date.now()): Promise<VerifyResult> {
   if (!authEnabled(env)) return deny("sign_in_disabled", "Sign-in is not enabled on this server");
   const parts = token.split(".");
@@ -89,7 +164,9 @@ export async function verifyAccessToken(token: string, env: Env, now = Date.now(
   } catch {
     return deny("invalid_token", "Malformed token");
   }
-  // Only asymmetric algorithms: this is what stops "alg: none" and HS256 key-confusion tricks.
+  // HS256 is never checked locally (that would need the shared secret): the Auth server decides.
+  if (header.alg === "HS256") return verifyWithAuthServer(token, claims, env, now);
+  // Otherwise only asymmetric algorithms: this stops "alg: none" and key-confusion tricks.
   if (header.alg !== "ES256" && header.alg !== "RS256") return deny("invalid_token", "Unsupported token algorithm");
   if (typeof header.kid !== "string" || !header.kid) return deny("invalid_token", "Token has no key id");
 
@@ -129,14 +206,5 @@ export async function verifyAccessToken(token: string, env: Env, now = Date.now(
   if (!aud.includes("authenticated") || claims.role !== "authenticated") return deny("invalid_token", "Not a signed-in user token");
   if (typeof claims.sub !== "string" || !claims.sub) return deny("invalid_token", "Token has no user");
 
-  // The account: a Google-verified address on the allowed domain.
-  const email = typeof claims.email === "string" ? claims.email.trim().toLowerCase() : "";
-  const [local, domain, ...rest] = email.split("@");
-  if (!local || !domain || rest.length > 0 || domain !== allowedDomain(env)) {
-    return deny("wrong_domain", `Only @${allowedDomain(env)} accounts can use this`);
-  }
-  if (claims.app_metadata?.provider !== "google" || claims.user_metadata?.email_verified !== true) {
-    return deny("wrong_provider", "Sign in with your Google account");
-  }
-  return { ok: true, identity: { kind: "user", email, sub: claims.sub } };
+  return checkAccount(env, claims.email, claims.app_metadata, claims.user_metadata, claims.sub);
 }
