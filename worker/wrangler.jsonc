@@ -21,8 +21,15 @@
     // the "key" in its manifest.json). The wacrm server calls the API
     // server-side, so it does not need to be listed.
     "ALLOWED_ORIGINS": "chrome-extension://bfdicajogngofgmdnilbhmpliocicbpi"
-  }
+  },
 
-  // The API_KEY secret is set with `wrangler secret put API_KEY` (see
-  // README). Until it exists, every /api/* call returns 500 (fails closed).
+  // Counts wrong PIN guesses for PIN-locked links with strong consistency
+  // (KV cannot). One PinGuard object per lock; see src/guard.ts.
+  "durable_objects": { "bindings": [{ "name": "PIN_GUARD", "class_name": "PinGuard" }] },
+  "exports": { "PinGuard": { "type": "durable-object", "storage": "sqlite" } }
+
+  // Secrets (set in the dashboard or with `wrangler secret put`, see README):
+  //   API_KEY     required. Until it exists every /api/* call returns 500.
+  //   PIN_SECRET  needed for PIN locks. Without it, setting a PIN returns 503 and
+  //               locked links stay closed (they never redirect).
 }

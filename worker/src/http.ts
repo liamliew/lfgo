@@ -92,3 +92,69 @@ export function htmlPage(status: number, title: string, heading: string, text: s
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });
 }
+
+export type PinPageState =
+  | { kind: "prompt" }
+  | { kind: "wrong"; remaining: number }
+  | { kind: "blocked"; retryAfter: number }
+  | { kind: "unavailable" };
+
+const waitText = (seconds: number): string => {
+  if (seconds < 90) return `${seconds} seconds`;
+  const minutes = Math.ceil(seconds / 60);
+  return minutes < 90 ? `${minutes} minutes` : `${Math.ceil(minutes / 60)} hours`;
+};
+
+/** The page shown for a PIN-locked link. Never contains the destination. */
+export function pinPage(state: PinPageState): Response {
+  const status = { prompt: 200, wrong: 401, blocked: 429, unavailable: 503 }[state.kind];
+  let note = "";
+  let noteClass = "";
+  if (state.kind === "wrong") {
+    note = `Incorrect PIN. ${state.remaining} ${state.remaining === 1 ? "attempt" : "attempts"} left.`;
+    noteClass = "err";
+  } else if (state.kind === "blocked") {
+    note = `Too many incorrect attempts. Try again in ${waitText(state.retryAfter)}.`;
+    noteClass = "err";
+  } else if (state.kind === "unavailable") {
+    note = "This link is locked, but PIN checking is not set up on the server, so it cannot be opened.";
+    noteClass = "err";
+  }
+  const form =
+    state.kind === "unavailable" || state.kind === "blocked"
+      ? ""
+      : `<form method="post" autocomplete="off"><label for="pin">Enter the 6-digit PIN</label>` +
+        `<input id="pin" name="pin" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" ` +
+        `autocomplete="off" required autofocus placeholder="••••••" aria-describedby="note">` +
+        `<button type="submit">Continue</button></form>`;
+  const html =
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
+    `<meta name="robots" content="noindex"><title>Protected link</title><style>` +
+    `:root{color-scheme:light dark;--bg:#fafafa;--card:#fff;--fg:#101828;--muted:#667085;--line:#e3e6eb;--accent:#4f46e5;--err:#d92d20}` +
+    `@media(prefers-color-scheme:dark){:root{--bg:#0f1012;--card:#17181c;--fg:#f2f4f7;--muted:#98a2b3;--line:#2a2d35;--accent:#8b85ff;--err:#ff7a70}}` +
+    `*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}` +
+    `main{width:min(92vw,360px);background:var(--card);border:1px solid var(--line);border-radius:14px;padding:28px 24px;text-align:center}` +
+    `svg{width:32px;height:32px;color:var(--accent)}h1{font-size:18px;margin:10px 0 4px}p{margin:0;color:var(--muted)}` +
+    `form{display:grid;gap:12px;margin-top:18px;text-align:left}label{font-weight:600;font-size:13px}` +
+    `input{width:100%;font:600 24px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.4em;text-align:center;padding:12px 8px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg)}` +
+    `input:focus{outline:2px solid var(--accent);outline-offset:1px}button{font:600 15px system-ui;padding:11px;border:0;border-radius:10px;background:var(--accent);color:#fff;cursor:pointer}` +
+    `.err{color:var(--err);margin-top:14px;font-size:14px}</style></head><body><main>` +
+    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>` +
+    `<h1>This link is protected</h1><p>You need a PIN to continue.</p>${form}` +
+    `<p id="note" class="${noteClass}" role="${noteClass ? "alert" : "status"}">${note}</p></main></body></html>`;
+  const headers: Record<string, string> = {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store",
+    "x-robots-tag": "noindex",
+    // same-origin, not no-referrer: with no-referrer Chrome sends "Origin: null" on the
+    // form POST, which the same-origin check in handleUnlock would reject. Either way
+    // no Referer reaches the destination after the redirect.
+    "referrer-policy": "same-origin",
+    "x-frame-options": "DENY",
+    // No form-action here on purpose: after a correct PIN the browser is
+    // redirected to the destination, and browsers check redirects against it.
+    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'",
+  };
+  if (state.kind === "blocked") headers["retry-after"] = String(state.retryAfter);
+  return new Response(html, { status, headers });
+}

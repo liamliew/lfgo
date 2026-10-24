@@ -1,3 +1,4 @@
+import type { Lock } from "./pin";
 import type { Env } from "./types";
 
 // KV layout: key = short code, value = JSON LinkRecord.
@@ -10,12 +11,16 @@ import type { Env } from "./types";
 export interface LinkRecord {
   url: string;
   title?: string;
+  /** Present when the link is PIN-locked. Never sent to API clients. */
+  lock?: Lock;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface Link extends LinkRecord {
   code: string;
+  /** True when PIN-locked. `lock` itself is only loaded on full reads. */
+  locked: boolean;
 }
 
 interface LinkMeta {
@@ -23,6 +28,7 @@ interface LinkMeta {
   m: string; // updatedAt
   u?: string; // url, only when it fits
   t?: string; // title, only when it fits
+  k?: 1; // PIN-locked
   f?: 1; // metadata is incomplete: read the full value
 }
 
@@ -31,7 +37,7 @@ const encoder = new TextEncoder();
 const size = (v: unknown) => encoder.encode(JSON.stringify(v)).length;
 
 function toMeta(rec: LinkRecord): LinkMeta {
-  const meta: LinkMeta = { c: rec.createdAt, m: rec.updatedAt };
+  const meta: LinkMeta = { c: rec.createdAt, m: rec.updatedAt, ...(rec.lock ? { k: 1 as const } : {}) };
   if (size({ ...meta, u: rec.url }) > META_LIMIT_BYTES) return { ...meta, f: 1 };
   meta.u = rec.url;
   if (rec.title) {
@@ -50,6 +56,7 @@ function parseRecord(raw: string | null): LinkRecord | null {
     return {
       url: v.url,
       ...(typeof v.title === "string" && v.title ? { title: v.title } : {}),
+      ...(v.lock && typeof v.lock.s === "string" && typeof v.lock.h === "string" ? { lock: v.lock } : {}),
       createdAt: v.createdAt ?? now,
       updatedAt: v.updatedAt ?? v.createdAt ?? now,
     };
@@ -60,7 +67,7 @@ function parseRecord(raw: string | null): LinkRecord | null {
 
 export async function getLink(env: Env, code: string): Promise<Link | null> {
   const rec = parseRecord(await env.LINKS.get(code));
-  return rec ? { code, ...rec } : null;
+  return rec ? { code, ...rec, locked: !!rec.lock } : null;
 }
 
 export async function putLink(env: Env, code: string, rec: LinkRecord): Promise<void> {
@@ -94,6 +101,7 @@ export async function listLinks(
             code: k.name,
             url: m.u,
             ...(m.t ? { title: m.t } : {}),
+            locked: !!m.k,
             createdAt: m.c,
             updatedAt: m.m ?? m.c,
           };

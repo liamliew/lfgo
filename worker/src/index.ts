@@ -1,4 +1,6 @@
-import { corsHeaders, checkAuth, apiError, htmlPage, json, readJson, withHeaders } from "./http";
+import { corsHeaders, checkAuth, apiError, htmlPage, json, pinPage, readJson, withHeaders } from "./http";
+import type { GuardStatus } from "./guard";
+import { PIN_RE, makeLock, verifyPin } from "./pin";
 import {
   deleteLink, findByUrl, getLink, listLinks, putLink, type Link,
 } from "./store";
@@ -17,6 +19,7 @@ function present(link: Link, base: string) {
     shortUrl: `${base}/${link.code}`,
     url: link.url,
     title: link.title ?? null,
+    locked: link.locked,
     createdAt: link.createdAt,
     updatedAt: link.updatedAt,
   };
@@ -28,22 +31,89 @@ async function codeExists(env: Env, code: string): Promise<boolean> {
 
 // ---------------------------------------------------------------- redirect
 
+function codeFromPath(path: string): string | null {
+  let code: string;
+  try {
+    code = normalizeCode(decodeURIComponent(path.slice(1)));
+  } catch {
+    return null;
+  }
+  return code.includes("/") ? null : code;
+}
+
+const notFound = () =>
+  htmlPage(404, "Link not found", "Link not found", "This short link does not exist or was removed.");
+
+const redirectTo = (link: Link, status: 302 | 303) =>
+  new Response(null, { status, headers: { location: link.url, "cache-control": "no-store" } });
+
 async function handleRedirect(request: Request, env: Env, path: string): Promise<Response> {
   if (path === "/") {
     return htmlPage(200, "Short links", "Short links", "Nothing to see here.");
   }
-  const code = normalizeCode(decodeURIComponent(path.slice(1)));
-  const link = code.includes("/") ? null : await getLink(env, code).catch(() => null);
-  if (!link) {
-    return htmlPage(404, "Link not found", "Link not found", "This short link does not exist or was removed.");
+  const code = codeFromPath(path);
+  const link = code ? await getLink(env, code).catch(() => null) : null;
+  if (!link) return notFound();
+  // A locked link never reveals its destination: it shows the PIN page instead.
+  if (link.lock) return pinPage(env.PIN_SECRET && env.PIN_GUARD ? { kind: "prompt" } : { kind: "unavailable" });
+  return redirectTo(link, 302);
+}
+
+async function guardCall(env: Env, salt: string, op: "check" | "fail" | "ok", ip: string): Promise<GuardStatus | null> {
+  const ns = env.PIN_GUARD;
+  if (!ns) return null;
+  try {
+    const res = await ns.get(ns.idFromName(salt)).fetch(`https://pin-guard/${op}?ip=${encodeURIComponent(ip)}`, {
+      method: op === "check" ? "GET" : "POST",
+    });
+    return res.ok ? ((await res.json()) as GuardStatus) : null;
+  } catch {
+    return null;
   }
-  return new Response(null, {
-    status: 302,
-    headers: { location: link.url, "cache-control": "no-store" },
-  });
+}
+
+/** POST /<code>: submit a PIN. Wrong guesses are counted by the PinGuard object. */
+async function handleUnlock(request: Request, env: Env, path: string): Promise<Response> {
+  const code = codeFromPath(path);
+  const link = code ? await getLink(env, code).catch(() => null) : null;
+  if (!link) return notFound();
+  if (!link.lock) return redirectTo(link, 303);
+
+  const origin = request.headers.get("origin");
+  if (origin && origin !== new URL(request.url).origin) {
+    return htmlPage(403, "Forbidden", "Forbidden", "This request did not come from the PIN page.");
+  }
+  if (!env.PIN_SECRET || !env.PIN_GUARD) return pinPage({ kind: "unavailable" });
+
+  const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+  const before = await guardCall(env, link.lock.s, "check", ip);
+  if (!before) return pinPage({ kind: "unavailable" }); // fail closed
+  if (!before.allowed) return pinPage({ kind: "blocked", retryAfter: before.retryAfter });
+
+  const text = await request.text();
+  const pin = text.length <= 1024 ? (new URLSearchParams(text).get("pin") ?? "").trim() : "";
+  if (await verifyPin(link.lock, pin, env.PIN_SECRET)) {
+    await guardCall(env, link.lock.s, "ok", ip);
+    return redirectTo(link, 303);
+  }
+  const after = await guardCall(env, link.lock.s, "fail", ip);
+  if (!after) return pinPage({ kind: "unavailable" });
+  return after.allowed
+    ? pinPage({ kind: "wrong", remaining: after.remaining })
+    : pinPage({ kind: "blocked", retryAfter: after.retryAfter });
 }
 
 // --------------------------------------------------------------------- api
+
+/** Validates the optional `pin` field. `pin: undefined` in the result means "no PIN". */
+async function parsePin(raw: unknown, env: Env): Promise<{ pin?: string } | Response> {
+  if (raw === undefined || raw === null || raw === "") return {};
+  if (typeof raw !== "string" || !PIN_RE.test(raw)) return apiError(400, "pin must be exactly 6 digits", "invalid_pin");
+  if (!env.PIN_SECRET || !env.PIN_GUARD) {
+    return apiError(503, "PIN locks are not set up on the server yet", "pin_unavailable");
+  }
+  return { pin: raw };
+}
 
 async function handleApi(request: Request, env: Env, path: string): Promise<Response> {
   const method = request.method;
@@ -87,6 +157,8 @@ async function handleApi(request: Request, env: Env, path: string): Promise<Resp
         return apiError(400, "title must be a string");
       }
       const title = typeof rawTitle === "string" ? cleanTitle(rawTitle) : "";
+      const pinInput = await parsePin(parsed.body.pin, env);
+      if (pinInput instanceof Response) return pinInput;
 
       let code: string;
       const rawAlias = parsed.body.alias;
@@ -107,9 +179,15 @@ async function handleApi(request: Request, env: Env, path: string): Promise<Resp
       }
 
       const now = new Date().toISOString();
-      const rec = { url: target.url, ...(title ? { title } : {}), createdAt: now, updatedAt: now };
+      const rec = {
+        url: target.url,
+        ...(title ? { title } : {}),
+        ...(pinInput.pin ? { lock: await makeLock(pinInput.pin, env.PIN_SECRET as string) } : {}),
+        createdAt: now,
+        updatedAt: now,
+      };
       await putLink(env, code, rec);
-      return json(present({ code, ...rec }, base), 201);
+      return json(present({ code, ...rec, locked: !!rec.lock }, base), 201);
     }
     return apiError(405, "Method not allowed");
   }
@@ -125,9 +203,9 @@ async function handleApi(request: Request, env: Env, path: string): Promise<Resp
   if (method === "PATCH") {
     const parsed = await readJson(request);
     if (!parsed.ok) return parsed.res;
-    const { newCode: rawNew, url: rawUrl, title: rawTitle } = parsed.body;
-    if (rawNew === undefined && rawUrl === undefined && rawTitle === undefined) {
-      return apiError(400, "Provide newCode, url and/or title");
+    const { newCode: rawNew, url: rawUrl, title: rawTitle, pin: rawPin } = parsed.body;
+    if (rawNew === undefined && rawUrl === undefined && rawTitle === undefined && rawPin === undefined) {
+      return apiError(400, "Provide newCode, url, title and/or pin");
     }
     if (rawTitle !== undefined && rawTitle !== null && typeof rawTitle !== "string") {
       return apiError(400, "title must be a string");
@@ -135,6 +213,13 @@ async function handleApi(request: Request, env: Env, path: string): Promise<Resp
 
     const current = await getLink(env, code);
     if (!current) return apiError(404, "Link not found", "not_found");
+
+    // pin: omitted keeps the current lock, a 6-digit string sets/changes it,
+    // null or "" removes it. The lock does not depend on the code, so a rename keeps it.
+    const pinInput = await parsePin(rawPin, env);
+    if (pinInput instanceof Response) return pinInput;
+    let lock = current.lock;
+    if (rawPin !== undefined) lock = pinInput.pin ? await makeLock(pinInput.pin, env.PIN_SECRET as string) : undefined;
 
     let destination = current.url;
     if (rawUrl !== undefined) {
@@ -161,6 +246,7 @@ async function handleApi(request: Request, env: Env, path: string): Promise<Resp
     const rec = {
       url: destination,
       ...(title ? { title } : {}),
+      ...(lock ? { lock } : {}),
       createdAt: current.createdAt,
       updatedAt: new Date().toISOString(),
     };
@@ -168,7 +254,7 @@ async function handleApi(request: Request, env: Env, path: string): Promise<Resp
     // never loses the link; at worst both codes briefly resolve.
     await putLink(env, nextCode, rec);
     if (nextCode !== code) await deleteLink(env, code);
-    return json(present({ code: nextCode, ...rec }, base));
+    return json(present({ code: nextCode, ...rec, locked: !!rec.lock }, base));
   }
 
   if (method === "DELETE") {
@@ -206,6 +292,11 @@ export default {
     if (request.method === "GET" || request.method === "HEAD") {
       return handleRedirect(request, env, path);
     }
-    return new Response("Method not allowed", { status: 405, headers: { allow: "GET, HEAD" } });
+    if (request.method === "POST" && path !== "/") {
+      return handleUnlock(request, env, path);
+    }
+    return new Response("Method not allowed", { status: 405, headers: { allow: "GET, HEAD, POST" } });
   },
 } satisfies ExportedHandler<Env>;
+
+export { PinGuard } from "./guard";

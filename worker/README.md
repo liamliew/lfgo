@@ -5,12 +5,13 @@ Personal URL shortener: a Cloudflare Worker backed by Workers KV, served on
 
 | Route | Auth | What |
 |---|---|---|
-| `GET /:code` | public | 302 to the long URL, friendly 404 page if missing |
-| `POST /api/links` | key | Create `{url, alias?, title?}` -> `{code, shortUrl, url, title, createdAt, updatedAt}` (201) |
+| `GET /:code` | public | 302 to the long URL, friendly 404 page if missing. A PIN-locked link shows a PIN page instead |
+| `POST /:code` | public | Submit the PIN form of a locked link: 303 to the long URL if correct |
+| `POST /api/links` | key | Create `{url, alias?, title?, pin?}` -> `{code, shortUrl, url, title, locked, createdAt, updatedAt}` (201) |
 | `GET /api/links` | key | List, paginated: `?limit=` (default 100, max 500) `&cursor=` |
 | `GET /api/links?url=<long url>` | key | Look up the link(s) for an exact destination (used by the extension to avoid duplicates) |
 | `GET /api/links/:code` | key | One link |
-| `PATCH /api/links/:code` | key | `{newCode?, url?, title?}`: rename, change destination and/or title (`""` clears the title) |
+| `PATCH /api/links/:code` | key | `{newCode?, url?, title?, pin?}`: rename, change destination, title and/or PIN (`""` clears the title; `pin: null` removes the lock) |
 | `DELETE /api/links/:code` | key | Delete |
 
 Auth: send the key as `X-API-Key: <key>` or `Authorization: Bearer <key>`.
@@ -27,10 +28,44 @@ the shortener's own host.
 `title` is optional free text (page title), whitespace-collapsed and capped at
 140 characters.
 
+## PIN locks
+
+A link can be locked behind a 6-digit PIN (`pin` on create or patch). Anyone opening
+it sees a PIN page; the destination is only revealed (303 redirect) after the
+right PIN. The API reports `locked: true/false` and never returns the PIN.
+
+- **Storage:** the PIN is never stored. Each lock keeps a random salt and an
+  HMAC-SHA256 of the PIN keyed with the `PIN_SECRET` Worker secret, so a leaked
+  KV namespace cannot be brute-forced (there are only a million PINs). HMAC is
+  used instead of a slow hash such as PBKDF2 because the Workers Free plan
+  allows 10 ms of CPU per request. Renaming a link keeps its PIN.
+- **Guessing limits** (a `PinGuard` Durable Object per lock, so the count is
+  strongly consistent, which KV cannot do): 5 wrong guesses from one IP address
+  blocks it for 15 minutes; 30 wrong guesses in total locks the link for
+  everyone for 60 minutes. A correct PIN clears that visitor's count. Changing
+  the PIN resets the counters.
+- **Fails closed:** if `PIN_SECRET` or the Durable Object is missing, locked
+  links stay on the PIN page (503) and never redirect; setting a PIN returns
+  503 `pin_unavailable`.
+- **Setup:** add a second Worker secret, a long random string, named
+  `PIN_SECRET` (dashboard: Settings -> Variables and Secrets, type *Secret*, or
+  `npx wrangler secret put PIN_SECRET`). The `PinGuard` Durable Object is created
+  by the next deploy (`exports` in `wrangler.jsonc`). Do not change
+  `PIN_SECRET` later: it invalidates every existing PIN.
+- **What it does not do:** a PIN only gates the short link. Anyone who learns the
+  destination URL can open it directly, and whoever gets through the PIN sees the
+  destination in the redirect. Six digits is deliberately modest protection
+  against someone patient with many IP addresses; use it to keep links from
+  casual access, not for secrets. Anyone with the API key can reset or remove a
+  PIN. Link-preview bots (Slack, etc.) only see the PIN page. Durable Objects
+  have their own free-plan daily limits; each guess costs a few requests.
+
 The redirect is a **302**, not a 301, so edits and deletes are not stuck in
 browser caches.
 
 ## Deploy
+
+Secrets: `API_KEY` (required) and `PIN_SECRET` (only for PIN locks).
 
 Prerequisites: Node 20+, a Cloudflare account, and the `lfcrea.com` zone
 active on that account.
