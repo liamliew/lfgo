@@ -7,9 +7,9 @@ const manifest = JSON.parse(readFileSync(new URL("manifest.json", root), "utf8")
 const html = (f) => readFileSync(new URL(f, root), "utf8");
 
 describe("manifest", () => {
-  it("is MV3, named LF GO, and asks for no more than activeTab + storage", () => {
+  it("is MV3, named LFC Tools, and asks for no more than activeTab + storage (PIN locks need nothing extra)", () => {
     assert.equal(manifest.manifest_version, 3);
-    assert.equal(manifest.name, "LF GO");
+    assert.equal(manifest.name, "LFC Tools");
     assert.deepEqual([...manifest.permissions].sort(), ["activeTab", "storage"]);
     assert.equal(manifest.host_permissions, undefined);
     assert.equal(manifest.content_security_policy, undefined, "keep the strict default CSP");

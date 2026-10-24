@@ -1,4 +1,4 @@
-LF GO - install (Chrome, Edge, Brave)
+LFC Tools - install (Chrome, Edge, Brave)
 
 1. Unzip this file somewhere permanent (do not delete the folder afterwards,
    the browser loads the extension from it).
@@ -9,6 +9,7 @@ LF GO - install (Chrome, Edge, Brave)
    "Test connection". The short domain is already go.lfcrea.com.
 5. Pin the icon (puzzle-piece menu) and click it on any web page, or press
    Alt+Shift+L. Use the list icon in the popup to manage all your links.
+   To lock a link with a PIN you also need the PIN_SECRET secret set on the server.
 
 To update: download the newer zip, unzip over the old folder (or into a new one)
 and click the reload arrow on the extension card at chrome://extensions.

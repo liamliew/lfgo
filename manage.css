@@ -46,3 +46,10 @@ tbody tr.selected { background: var(--accent-soft); }
 .row { display: inline-flex; gap: 8px; }
 .qr-body .dialog-actions { flex-wrap: wrap; gap: 8px; }
 @media (max-width: 640px) { .page { padding: 14px 12px 48px; } }
+.create .pin-col { flex: 0 1 190px; }
+.create .pin-input-row input { font: 600 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.15em; padding: 7px 10px; }
+.btn.icon-only { padding: 7px 9px; }
+.lock-badge { display: inline-grid; vertical-align: middle; margin-left: 8px; color: var(--accent); }
+.lock-badge svg { width: 14px; height: 14px; }
+#pin-dialog .dialog-actions.between { width: 100%; }
+.icon-btn.locked { color: var(--accent); }

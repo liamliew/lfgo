@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "LF GO",
-  "version": "0.2.0",
-  "description": "Shorten the current page, manage your links and make QR codes with LF GO.",
+  "name": "LFC Tools",
+  "version": "0.3.0",
+  "description": "Shorten the current page, lock links with a PIN, manage your links and make QR codes with LFC Tools.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyEi1n5PHFM0xkhhEFE4/cmSV4f499lWSxsKVEukbXIwdTIU1ZOlGXyRQtQk+TlRcWDzpYC5Rm+KkEVVhi7OyZmCwmr3D9FCuVu+0iisbN30/qxItfhMTWk0PSlg3aJgCG+DUE9FrBIJ4Ymg34DL37xd6wcp/nmWcmoC/wjysDuGbXZz0eE/poR/5etvMeOItZI4vGFCiDi817cTCeRCnVxZQYZf3MkZ+chRNe2xSQ0uKwQqoLqNc5Syl11Oku3PtVnRB/Nmr5ffgGjNxygm3TmBznaL/8OaZ5I6spCkPR4kiSRztGp31LRCUeIbSA0lyAIgCqbbBNPWWBv3J+z7B7wIDAQAB",
   "permissions": [
     "activeTab",
@@ -12,7 +12,7 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "LF GO: shorten this page",
+    "default_title": "LFC Tools: shorten this page",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
@@ -25,7 +25,7 @@
       "suggested_key": {
         "default": "Alt+Shift+L"
       },
-      "description": "Shorten this page with LF GO"
+      "description": "Shorten this page with LFC Tools"
     }
   },
   "options_page": "options.html",

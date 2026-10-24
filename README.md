@@ -1,6 +1,6 @@
-# LF GO (Chrome extension)
+# LFC Tools (Chrome extension)
 
-Click the toolbar icon on any web page: LF GO creates a short link for that
+Click the toolbar icon on any web page: LFC Tools creates a short link for that
 page (or reuses the one that already exists), shows it in an editable field,
 generates a QR code for it, and copies the link. Open the management page to
 see, search, edit and delete every link.
@@ -11,7 +11,7 @@ Worker it talks to lives on branch `claude/links-worker`.
 
 ## Easy install
 
-1. Download the latest **lf-go-extension-x.y.z.zip** from the
+1. Download the latest **lfc-tools-extension-x.y.z.zip** from the
    [Releases page](https://github.com/liamliew/lfgo/releases). (No release yet?
    Use [this branch as a zip](https://github.com/liamliew/lfgo/archive/refs/heads/claude/links-extension.zip),
    which unzips into a folder you can load the same way.)
@@ -41,6 +41,11 @@ press the reload arrow on the extension's card.
 - Copies the link automatically when it can; the copy button always works.
 - Stores the page's title with the link so lists are readable.
 - Lists your most recent links for one-click copying.
+- **Lock with a PIN:** protect the link with a 6-digit PIN you type or generate.
+  Visitors then see a PIN page and only reach the destination after the right
+  PIN. The PIN is shown once when you set it (with a "Copy link + PIN" button),
+  because only a hash is stored and it can't be shown again. Change or remove
+  it any time (removing asks for a second click).
 - Browser pages (`chrome://`, the Web Store, extension pages) can't be
   shortened and show a message instead.
 
@@ -50,8 +55,12 @@ press the reload arrow on the extension's card.
   copy, open, QR code, edit and delete on each row.
 - Create links (with optional custom alias), edit alias / destination / title,
   and delete with a confirmation.
+- PIN locks: set a PIN when creating a link, or lock / change / remove it from
+  any row (padlock button). Locked links show a padlock; filter by "Locked with
+  a PIN" or "Not locked".
 - Search (press `/` to jump to it), sort (newest, oldest, alias), select several
-  and delete them in one go, and export the list to CSV.
+  and delete them in one go, and export the list to CSV (with a `locked` column;
+  PINs are never exported).
 - A "Created by" column appears automatically once the server reports who made
   each link (planned with Google sign-in).
 
@@ -61,6 +70,22 @@ press the reload arrow on the extension's card.
 
 Fonts: Inter, bundled in `fonts/` (SIL Open Font License). QR codes: the `uqr`
 encoder, bundled in `vendor/` (MIT).
+
+## PIN locks: what you need to know
+
+- **Server setup:** locks need the Worker from branch `claude/links-worker` at
+  or after the "PIN-locked links" change, plus a `PIN_SECRET` Worker secret (see
+  the Worker README). Without it the extension shows "PIN locks are not set up on
+  the server yet" and nothing breaks.
+- **How strong it is:** the PIN is checked by the Worker, never in the browser.
+  Wrong guesses are limited (5 per IP address per 15 minutes; 30 per link per
+  hour), and only a salted, secret-keyed hash is stored. Six digits is still
+  modest protection against someone patient with many IP addresses, so treat it
+  as a gate against casual access, not as a way to hide secrets.
+- **What it does not protect:** the destination itself (anyone who knows the
+  long URL can open it directly, and whoever enters the PIN sees it in the
+  redirect). Anyone with the API key can reset or remove a PIN.
+- Renaming a locked link keeps its PIN.
 
 ## Publishing a release (maintainers)
 
@@ -79,7 +104,8 @@ extension loads.
   `POST /api/links`; Save calls `PATCH /api/links/:code`. The manage page also
   uses `GET /api/links` (paged) and `DELETE /api/links/:code`.
 - Page titles need the Worker from branch `claude/links-worker` at or after the
-  "optional link title" change; an older Worker simply ignores titles.
+  "optional link title" change; an older Worker simply ignores titles. PIN locks
+  need the later "PIN-locked links" change (see above).
 - With no host permissions, the browser applies CORS to these requests. The
   Worker allows them for this extension's origin only, via `ALLOWED_ORIGINS`
   in the Worker branch's `wrangler.jsonc`. If you see "Could not reach ...",
@@ -99,11 +125,12 @@ extension loads.
 ## Tests
 
 ```sh
-npm test    # validation, API client, list helpers, CSV, QR, manifest and release-zip checks
+npm test    # validation, API client, PIN helpers, list helpers, CSV, QR, manifest and release-zip checks
 ```
 
 The whole UI was also driven in a real Chromium against a local Worker
 (`wrangler dev`): settings, generating state, QR codes decoded back to the
 short URL (popup canvas, PNG and SVG downloads, manage dialog), rename, taken
 alias, reuse, recent links, unsupported pages, search, sort, create, edit,
-single and bulk delete, CSV export and the no-key states.
+single and bulk delete, CSV export, the no-key states, and PIN locks end to end
+(locking, changing, removing, the visitor's PIN page and redirect, filters).

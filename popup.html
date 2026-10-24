@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>LF GO</title>
+  <title>LFC Tools</title>
   <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <main>
     <header class="top">
-      <div class="brand"><img src="icons/icon48.png" alt=""><span>LF GO</span></div>
+      <div class="brand"><img src="icons/icon48.png" alt=""><span>LFC Tools</span></div>
       <div class="top-actions">
         <button id="manage" class="icon-btn" type="button" title="Manage all links" aria-label="Manage all links"><span data-icon="list"></span></button>
         <button id="settings" class="icon-btn" type="button" title="Settings" aria-label="Settings"><span data-icon="settings"></span></button>
@@ -18,7 +18,7 @@
     </header>
 
     <section id="setup" class="card" hidden>
-      <h2>Connect LF GO</h2>
+      <h2>Connect LFC Tools</h2>
       <p class="muted">Add your API key in settings to start creating links.</p>
       <button id="setup-btn" class="btn primary" type="button">Open settings</button>
     </section>
@@ -41,6 +41,33 @@
       </div>
       <p id="status" class="msg" role="status" aria-live="polite"></p>
       <button id="save" class="btn primary block" type="button" hidden>Save alias</button>
+
+      <div id="pin-box" class="pin-box">
+        <div id="pin-locked" class="pin-row" hidden>
+          <span class="chip"><span data-icon="lock"></span>Locked with a PIN</span>
+          <span class="pin-links">
+            <button id="pin-change" class="link-btn" type="button">Change</button>
+            <button id="pin-remove" class="link-btn danger" type="button">Remove</button>
+          </span>
+        </div>
+        <button id="pin-open" class="btn small" type="button"><span data-icon="lock"></span>Lock with a PIN</button>
+        <form id="pin-form" class="pin-form" hidden novalidate>
+          <label for="pin-input" class="field-label">6-digit PIN</label>
+          <div class="pin-input-row">
+            <input id="pin-input" type="text" inputmode="numeric" maxlength="6" autocomplete="off" spellcheck="false" placeholder="123456">
+            <button id="pin-random" class="btn small" type="button" title="Generate a random PIN"><span data-icon="shuffle"></span>Random</button>
+          </div>
+          <div class="pin-actions">
+            <button id="pin-save" class="btn primary small" type="submit">Lock link</button>
+            <button id="pin-cancel" class="btn small ghost" type="button">Cancel</button>
+          </div>
+        </form>
+        <div id="pin-done" class="pin-done" hidden>
+          <p>PIN: <strong id="pin-shown" class="pin-shown"></strong></p>
+          <p class="muted">Save it now. It can't be shown again.</p>
+          <button id="pin-copy-both" class="btn small" type="button"><span data-icon="copy"></span>Copy link + PIN</button>
+        </div>
+      </div>
 
       <div class="qr-card card">
         <div id="qr-frame" class="qr-frame skeleton"><canvas id="qr" width="144" height="144" aria-label="QR code for the short link" role="img"></canvas></div>

@@ -47,6 +47,17 @@ export function aliasProblem(alias) {
   return null;
 }
 
+const PIN_RE = /^\d{6}$/;
+export const isValidPin = (pin) => typeof pin === "string" && PIN_RE.test(pin);
+
+/** A random 6-digit PIN, uniformly distributed (rejection sampling, no modulo bias). */
+export function randomPin(rng = (a) => crypto.getRandomValues(a)) {
+  const limit = Math.floor(0x100000000 / 1_000_000) * 1_000_000;
+  const buf = new Uint32Array(1);
+  do rng(buf); while (buf[0] >= limit);
+  return String(buf[0] % 1_000_000).padStart(6, "0");
+}
+
 export class ApiError extends Error {
   constructor(status, code, message) {
     super(message);
@@ -64,6 +75,9 @@ export function describeError(err, base) {
   }
   if (err.status === 401) return "The API key was rejected. Check it in Options.";
   if (err.code === "alias_taken") return "That alias is already taken.";
+  if (err.code === "pin_unavailable") {
+    return "PIN locks are not set up on the server yet. Add the PIN_SECRET secret in Cloudflare (see the Worker README).";
+  }
   if (err.status === 500 && err.code === "misconfigured") return "The server has no API key configured yet.";
   return err.message || `Request failed (${err.status}).`;
 }
@@ -101,13 +115,14 @@ export function createClient({ base, apiKey, fetchImpl = (...a) => fetch(...a) }
       const data = await request("GET", `/api/links?url=${encodeURIComponent(url)}`);
       return data.links?.[0] ?? null;
     },
-    create: (url, alias, title) =>
+    create: (url, alias, title, pin) =>
       request("POST", "/api/links", {
         url,
         ...(alias ? { alias } : {}),
         ...(title ? { title } : {}),
+        ...(pin ? { pin } : {}),
       }),
-    /** Change any of { newCode, url, title }; title "" clears it. */
+    /** Change any of { newCode, url, title, pin }; title "" clears it, pin null removes the lock. */
     update: (code, patch) => request("PATCH", `/api/links/${encodeURIComponent(code)}`, patch),
     rename: (code, newCode) => request("PATCH", `/api/links/${encodeURIComponent(code)}`, { newCode }),
     remove: (code) => request("DELETE", `/api/links/${encodeURIComponent(code)}`),
@@ -173,6 +188,13 @@ export function filterLinks(links, query) {
   );
 }
 
+/** mode: "all" | "locked" | "unlocked" */
+export function filterByLock(links, mode) {
+  if (mode === "locked") return links.filter((l) => l.locked);
+  if (mode === "unlocked") return links.filter((l) => !l.locked);
+  return links;
+}
+
 const RTF = typeof Intl !== "undefined" ? new Intl.RelativeTimeFormat("en", { numeric: "auto" }) : null;
 
 /** "3 days ago", "yesterday", "just now". */
@@ -196,7 +218,8 @@ const csvCell = (value) => {
 };
 
 export function toCsv(links, base) {
-  const head = ["code", "short_url", "destination", "title", "created_at", "updated_at", "created_by"];
-  const rows = links.map((l) => [l.code, `${base}/${l.code}`, l.url, l.title, l.createdAt, l.updatedAt, l.createdBy]);
+  // "locked" says whether a PIN is set; PINs are never exported (the server only keeps a hash).
+  const head = ["code", "short_url", "destination", "title", "locked", "created_at", "updated_at", "created_by"];
+  const rows = links.map((l) => [l.code, `${base}/${l.code}`, l.url, l.title, l.locked ? "yes" : "no", l.createdAt, l.updatedAt, l.createdBy]);
   return [head, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
 }

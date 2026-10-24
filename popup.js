@@ -1,5 +1,6 @@
 import {
-  ApiError, aliasProblem, checkTabUrl, createClient, describeError, hostOf, loadSettings, shortLabel, sortLinks,
+  ApiError, aliasProblem, checkTabUrl, createClient, describeError, hostOf, isValidPin, loadSettings, randomPin,
+  shortLabel, sortLinks,
 } from "./shared.js";
 import { drawQr, qrPngBlob, qrSvgBlob } from "./qr.js";
 import { copyText, downloadBlob, flashDone, mountIcons, slug } from "./ui.js";
@@ -11,6 +12,8 @@ let client;
 let base = "";
 let currentCode = "";
 let tab = { url: "", title: "" };
+let locked = false;
+let lastPin = ""; // kept in memory only, until the popup closes
 
 const shortUrl = () => `${base}/${currentCode}`;
 
@@ -59,6 +62,10 @@ async function activeTab() {
 
 async function generate() {
   showOnly("ready");
+  locked = false;
+  lastPin = "";
+  $("pin-form").hidden = true;
+  renderLock();
   paintDestination();
   $("prefix").textContent = `${hostOf(base)}/`;
   setLoading(true);
@@ -70,8 +77,11 @@ async function generate() {
       link = await client.update(existing.code, { title: tab.title }).catch(() => existing);
     }
     currentCode = link.code;
+    locked = !!link.locked;
+    lastPin = "";
     $("alias").value = link.code;
     setLoading(false);
+    renderLock();
     paintQr();
     syncSave();
     const copied = await copyText(shortUrl());
@@ -82,6 +92,87 @@ async function generate() {
     showOnly("failed");
   }
 }
+
+// ------------------------------------------------------------------ PIN lock
+
+function renderLock() {
+  const formOpen = !$("pin-form").hidden;
+  $("pin-locked").hidden = !locked;
+  $("pin-open").hidden = locked || formOpen;
+  $("pin-done").hidden = !lastPin;
+  $("pin-shown").textContent = lastPin;
+}
+
+function openPinForm(change) {
+  $("pin-form").hidden = false;
+  $("pin-save").textContent = change ? "Change PIN" : "Lock link";
+  $("pin-input").value = "";
+  renderLock();
+  $("pin-input").focus();
+}
+
+function closePinForm() {
+  $("pin-form").hidden = true;
+  renderLock();
+}
+
+$("pin-open").addEventListener("click", () => openPinForm(false));
+$("pin-change").addEventListener("click", () => openPinForm(true));
+$("pin-cancel").addEventListener("click", closePinForm);
+$("pin-random").addEventListener("click", () => {
+  $("pin-input").value = randomPin();
+  $("pin-input").focus();
+});
+$("pin-input").addEventListener("input", () => {
+  $("pin-input").value = $("pin-input").value.replace(/\D/g, "").slice(0, 6);
+});
+$("pin-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const pin = $("pin-input").value;
+  if (!isValidPin(pin)) return say("The PIN must be exactly 6 digits.", "err");
+  $("pin-save").disabled = true;
+  say("Saving…");
+  try {
+    await client.update(currentCode, { pin });
+    locked = true;
+    lastPin = pin;
+    closePinForm();
+    say("Link locked. Share the PIN separately.", "ok");
+  } catch (err) {
+    say(describeError(err, base), "err");
+  } finally {
+    $("pin-save").disabled = false;
+  }
+});
+
+let removeTimer;
+$("pin-remove").addEventListener("click", async () => {
+  const btn = $("pin-remove");
+  if (btn.dataset.confirm !== "1") {
+    // Removing the lock makes the link open to everyone, so ask once.
+    btn.dataset.confirm = "1";
+    btn.textContent = "Click again to confirm";
+    removeTimer = setTimeout(() => { btn.dataset.confirm = ""; btn.textContent = "Remove"; }, 4000);
+    return;
+  }
+  clearTimeout(removeTimer);
+  btn.dataset.confirm = "";
+  btn.textContent = "Remove";
+  try {
+    await client.update(currentCode, { pin: null });
+    locked = false;
+    lastPin = "";
+    renderLock();
+    say("PIN removed. Anyone with the link can open it.", "ok");
+  } catch (err) {
+    say(describeError(err, base), "err");
+  }
+});
+
+$("pin-copy-both").addEventListener("click", async () => {
+  const ok = await copyText(`${shortUrl()}\nPIN: ${lastPin}`);
+  say(ok ? "Link and PIN copied." : "Could not copy. Select the PIN and copy it manually.", ok ? "ok" : "err");
+});
 
 async function loadRecent() {
   try {
@@ -184,11 +275,11 @@ $("copy").addEventListener("click", async () => {
   say(ok ? "Copied." : "Could not copy. Select the link and copy it manually.", ok ? "ok" : "err");
 });
 $("qr-png").addEventListener("click", async () => {
-  downloadBlob(await qrPngBlob(shortUrl(), 1024), `lf-go-${slug(currentCode)}-qr.png`);
+  downloadBlob(await qrPngBlob(shortUrl(), 1024), `lfc-tools-${slug(currentCode)}-qr.png`);
   say("QR code saved as PNG.", "ok");
 });
 $("qr-svg").addEventListener("click", () => {
-  downloadBlob(qrSvgBlob(shortUrl()), `lf-go-${slug(currentCode)}-qr.svg`);
+  downloadBlob(qrSvgBlob(shortUrl()), `lfc-tools-${slug(currentCode)}-qr.svg`);
   say("QR code saved as SVG.", "ok");
 });
 

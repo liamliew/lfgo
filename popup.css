@@ -1,4 +1,5 @@
-body { width: 380px; }
+html { overflow-x: hidden; }
+body { width: 380px; max-width: 100%; overflow-x: hidden; }
 main { padding: 14px 14px 16px; display: grid; gap: 12px; }
 .top { display: flex; justify-content: space-between; align-items: center; }
 .top-actions { display: flex; gap: 2px; }
@@ -39,3 +40,11 @@ body:not(.loading) .qr-frame::after { display: none; }
 .recent-code { font-weight: 600; font-size: 13px; }
 .recent-sub { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .loading #copy, .loading .qr-actions .btn { pointer-events: none; opacity: 0.5; }
+
+.pin-box { margin-top: 10px; display: grid; gap: 8px; }
+.pin-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pin-links { display: flex; gap: 10px; }
+#pin-open { justify-self: start; }
+.pin-form { display: grid; gap: 6px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 10px; }
+.pin-actions { display: flex; gap: 8px; }
+.loading #pin-open { pointer-events: none; opacity: 0.5; }

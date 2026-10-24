@@ -1,6 +1,6 @@
 import {
-  aliasProblem, checkTabUrl, createClient, describeError, filterLinks, hostOf, loadSettings, relativeTime, shortLabel,
-  sortLinks, toCsv,
+  aliasProblem, checkTabUrl, createClient, describeError, filterByLock, filterLinks, hostOf, isValidPin, loadSettings,
+  randomPin, relativeTime, shortLabel, sortLinks, toCsv,
 } from "./shared.js";
 import { drawQr, qrPngBlob, qrSvgBlob } from "./qr.js";
 import { copyText, downloadBlob, flashDone, icon, mountIcons, slug, toast } from "./ui.js";
@@ -11,12 +11,12 @@ let client = null;
 let base = "";
 let links = [];
 const selected = new Set();
-const view = { query: "", sort: "newest" };
+const view = { query: "", sort: "newest", lock: "all" };
 let loadState = "loading"; // loading | ready | error
 
 // ------------------------------------------------------------------ helpers
 
-const visible = () => sortLinks(filterLinks(links, view.query), view.sort);
+const visible = () => sortLinks(filterByLock(filterLinks(links, view.query), view.lock), view.sort);
 const el = (tag, props = {}, ...kids) => {
   const node = Object.assign(document.createElement(tag), props);
   node.append(...kids);
@@ -62,7 +62,8 @@ function renderRows() {
 
     const code = el("td", { className: "code-cell" },
       el("a", { href: `${base}/${l.code}`, target: "_blank", rel: "noopener noreferrer", title: "Open short link" },
-        el("span", { className: "host", textContent: `${hostOf(base)}/` }), l.code));
+        el("span", { className: "host", textContent: `${hostOf(base)}/` }), l.code),
+      l.locked ? el("span", { className: "lock-badge", title: "Locked with a PIN", innerHTML: icon("lock") }) : "");
 
     const dest = el("td", { className: "dest-cell" },
       el("div", { className: "dest-title", textContent: l.title || hostOf(l.url), title: l.title || "" }),
@@ -77,6 +78,7 @@ function renderRows() {
       }),
       iconButton("open", "Open destination", () => window.open(l.url, "_blank", "noopener,noreferrer")),
       iconButton("qr", "Show QR code", () => openQr(l)),
+      iconButton("lock", l.locked ? "Change or remove PIN" : "Lock with a PIN", () => openPin(l), l.locked ? "locked" : ""),
       iconButton("edit", "Edit link", () => openEdit(l)),
       iconButton("trash", "Delete link", () => openDelete([l]), "danger")));
 
@@ -95,7 +97,7 @@ function renderChrome() {
   $("table").hidden = loadState === "ready" && list.length === 0;
   if (empty) {
     $("empty-title").textContent = hasLinks ? "No matching links" : "No links yet";
-    $("empty-text").textContent = hasLinks ? "Try a different search." : "Create one above, or click the LF GO icon on any page.";
+    $("empty-text").textContent = hasLinks ? "Try a different search." : "Create one above, or click the LFC Tools icon on any page.";
   }
   $("count").textContent = loadState === "ready" ? `${list.length} of ${links.length} ${links.length === 1 ? "link" : "links"}` : "";
 
@@ -142,15 +144,22 @@ $("create").addEventListener("submit", async (e) => {
     const problem = aliasProblem(alias);
     if (problem) return say(problem, "err");
   }
+  const pin = $("new-pin").value.trim();
+  if (pin && !isValidPin(pin)) return say("The PIN must be exactly 6 digits.", "err");
   $("create-btn").disabled = true;
   say("Creating…");
   try {
-    const link = await client.create(url.url, alias || undefined);
+    const link = await client.create(url.url, alias || undefined, undefined, pin || undefined);
     links.push(link);
     $("new-url").value = "";
     $("new-alias").value = "";
+    $("new-pin").value = "";
     const copied = await copyText(`${base}/${link.code}`);
-    say(`Created ${shortLabel(base, link.code)}${copied ? " and copied it" : ""}.`, "ok");
+    say(
+      `Created ${shortLabel(base, link.code)}${copied ? " and copied it" : ""}.` +
+        (pin ? ` Locked with PIN ${pin}. Save it now; it can't be shown again.` : ""),
+      "ok",
+    );
     render();
     $("new-url").focus();
   } catch (err) {
@@ -261,6 +270,103 @@ $("delete-confirm").addEventListener("click", async () => {
 });
 $("bulk-delete").addEventListener("click", () => openDelete(links.filter((l) => selected.has(l.code))));
 
+// ------------------------------------------------------------------ PIN lock
+
+const digitsOnly = (input) => { input.value = input.value.replace(/\D/g, "").slice(0, 6); };
+$("new-pin").addEventListener("input", () => digitsOnly($("new-pin")));
+$("new-pin-random").addEventListener("click", () => { $("new-pin").value = randomPin(); });
+$("pin-dialog-input").addEventListener("input", () => digitsOnly($("pin-dialog-input")));
+$("pin-dialog-random").addEventListener("click", () => { $("pin-dialog-input").value = randomPin(); $("pin-dialog-input").focus(); });
+
+let pinTarget = null;
+let pinShown = ""; // the PIN just set; kept in memory only while the dialog is open
+let removeArmed = false;
+let removeTimer;
+
+function paintPinDialog() {
+  const done = !!pinShown;
+  const l = pinTarget;
+  $("pin-dialog-title").textContent = `PIN lock for ${shortLabel(base, l.code)}`;
+  $("pin-dialog-state").textContent = l.locked
+    ? "This link is locked. Visitors must enter its PIN."
+    : "This link is open to anyone. Add a PIN to lock it.";
+  $("pin-dialog-label").textContent = l.locked ? "New PIN" : "6-digit PIN";
+  $("pin-dialog-save").textContent = l.locked ? "Change PIN" : "Lock link";
+  $("pin-dialog-fields").hidden = done;
+  $("pin-dialog-save").hidden = done;
+  $("pin-dialog-remove").hidden = !l.locked || done;
+  $("pin-dialog-remove").textContent = removeArmed ? "Click again to remove" : "Remove lock";
+  $("pin-dialog-done").hidden = !done;
+  $("pin-dialog-shown").textContent = pinShown;
+  $("pin-dialog-close").textContent = done ? "Done" : "Close";
+}
+
+function openPin(l) {
+  pinTarget = l;
+  pinShown = "";
+  removeArmed = false;
+  $("pin-dialog-input").value = "";
+  $("pin-dialog-msg").textContent = "";
+  paintPinDialog();
+  $("pin-dialog").showModal();
+  $("pin-dialog-input").focus();
+}
+
+function replaceLink(updated, oldCode) {
+  const i = links.findIndex((x) => x.code === oldCode);
+  if (i >= 0) links[i] = updated;
+  pinTarget = updated;
+  render();
+}
+
+$("pin-dialog-close").addEventListener("click", () => $("pin-dialog").close());
+$("pin-dialog-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const msg = $("pin-dialog-msg");
+  const pin = $("pin-dialog-input").value;
+  msg.className = "msg err";
+  if (!isValidPin(pin)) return (msg.textContent = "The PIN must be exactly 6 digits.");
+  $("pin-dialog-save").disabled = true;
+  msg.className = "msg";
+  msg.textContent = "Saving…";
+  try {
+    replaceLink(await client.update(pinTarget.code, { pin }), pinTarget.code);
+    pinShown = pin;
+    msg.textContent = "";
+    paintPinDialog();
+    toast(pinTarget.locked ? "PIN saved" : "Link unlocked");
+  } catch (err) {
+    msg.className = "msg err";
+    msg.textContent = describeError(err, base);
+  } finally {
+    $("pin-dialog-save").disabled = false;
+  }
+});
+$("pin-dialog-remove").addEventListener("click", async () => {
+  if (!removeArmed) {
+    // Removing the lock opens the link to everyone, so confirm with a second click.
+    removeArmed = true;
+    paintPinDialog();
+    removeTimer = setTimeout(() => { removeArmed = false; paintPinDialog(); }, 4000);
+    return;
+  }
+  clearTimeout(removeTimer);
+  removeArmed = false;
+  try {
+    replaceLink(await client.update(pinTarget.code, { pin: null }), pinTarget.code);
+    $("pin-dialog").close();
+    toast("Lock removed. Anyone with the link can open it.");
+  } catch (err) {
+    $("pin-dialog-msg").className = "msg err";
+    $("pin-dialog-msg").textContent = describeError(err, base);
+    paintPinDialog();
+  }
+});
+$("pin-dialog-copy").addEventListener("click", async () => {
+  const ok = await copyText(`${base}/${pinTarget.code}\nPIN: ${pinShown}`);
+  toast(ok ? "Link and PIN copied" : "Could not copy", ok ? "" : "err");
+});
+
 // ---------------------------------------------------------------------- qr
 
 let qrLink = null;
@@ -273,13 +379,14 @@ function openQr(l) {
   $("qr-dialog").showModal();
 }
 $("qr-close").addEventListener("click", () => $("qr-dialog").close());
-$("qr-png").addEventListener("click", async () => downloadBlob(await qrPngBlob(`${base}/${qrLink.code}`, 1024), `lf-go-${slug(qrLink.code)}-qr.png`));
-$("qr-svg").addEventListener("click", () => downloadBlob(qrSvgBlob(`${base}/${qrLink.code}`), `lf-go-${slug(qrLink.code)}-qr.svg`));
+$("qr-png").addEventListener("click", async () => downloadBlob(await qrPngBlob(`${base}/${qrLink.code}`, 1024), `lfc-tools-${slug(qrLink.code)}-qr.png`));
+$("qr-svg").addEventListener("click", () => downloadBlob(qrSvgBlob(`${base}/${qrLink.code}`), `lfc-tools-${slug(qrLink.code)}-qr.svg`));
 
 // ------------------------------------------------------------ toolbar & misc
 
 $("search").addEventListener("input", () => { view.query = $("search").value; render(); });
 $("sort").addEventListener("change", () => { view.sort = $("sort").value; render(); });
+$("lock-filter").addEventListener("change", () => { view.lock = $("lock-filter").value; render(); });
 $("select-all").addEventListener("change", () => {
   const list = visible();
   if ($("select-all").checked) list.forEach((l) => selected.add(l.code));
@@ -288,7 +395,7 @@ $("select-all").addEventListener("change", () => {
 });
 $("export").addEventListener("click", () => {
   const stamp = new Date().toISOString().slice(0, 10);
-  downloadBlob(new Blob([toCsv(visible(), base)], { type: "text/csv;charset=utf-8" }), `lf-go-links-${stamp}.csv`);
+  downloadBlob(new Blob([toCsv(visible(), base)], { type: "text/csv;charset=utf-8" }), `lfc-tools-links-${stamp}.csv`);
   toast("Exported to CSV");
 });
 $("refresh").addEventListener("click", () => client && load());

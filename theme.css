@@ -1,4 +1,4 @@
-/* LF GO design tokens and shared components. Inter is bundled (fonts/), so the
+/* LFC Tools design tokens and shared components. Inter is bundled (fonts/), so the
    extension works offline and the strict extension CSP stays untouched. */
 @font-face {
   font-family: "Inter";
@@ -157,3 +157,15 @@ dialog::backdrop { background: rgba(16, 24, 40, 0.5); }
 .dialog-body h2 { font-size: 16px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 .field-group { display: grid; gap: 6px; }
+
+/* PIN lock pieces shared by the popup and the manage page */
+.chip { display: inline-flex; align-items: center; gap: 6px; background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.chip svg { width: 14px; height: 14px; }
+.link-btn { border: 0; background: none; padding: 2px 0; color: var(--accent); cursor: pointer; font-size: 13px; font-weight: 500; }
+.link-btn:hover { text-decoration: underline; }
+.link-btn.danger { color: var(--danger); }
+.pin-input-row { display: flex; gap: 8px; }
+.pin-input-row input { font: 600 18px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.25em; text-align: center; }
+.pin-done { border: 1px solid var(--ok); background: var(--ok-soft); border-radius: var(--radius); padding: 10px; display: grid; gap: 4px; justify-items: start; }
+.pin-done p { margin: 0; font-size: 13px; }
+.pin-shown { font: 700 18px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.2em; }

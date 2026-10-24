@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   ApiError, aliasProblem, checkTabUrl, createClient, describeError, filterLinks, hostOf, loadSettings,
-  normalizeBase, relativeTime, removeApiKey, saveSettings, shortLabel, sortLinks, toCsv,
+  filterByLock, isValidPin, normalizeBase, randomPin, relativeTime, removeApiKey, saveSettings, shortLabel, sortLinks, toCsv,
 } from "../shared.js";
 
 describe("normalizeBase", () => {
@@ -187,10 +187,68 @@ describe("toCsv", () => {
       L("c", { title: "-2+3" }),
     ], "https://go.test");
     const lines = csv.split("\r\n");
-    assert.equal(lines[0], "code,short_url,destination,title,created_at,updated_at,created_by");
+    assert.equal(lines[0], "code,short_url,destination,title,locked,created_at,updated_at,created_by");
     assert.match(lines[1], /^a,https:\/\/go\.test\/a,https:\/\/example\.com\/a,"He said ""hi"", ok",/);
     assert.match(lines[2], /,"'=HYPERLINK\(""http:\/\/evil""\)",/);
     assert.match(lines[3], /,'-2\+3,/);
     assert.equal(lines.at(-1), "");
+  });
+});
+
+describe("PIN helpers", () => {
+  it("validates exactly six digits", () => {
+    for (const ok of ["000000", "123456", "999999"]) assert.equal(isValidPin(ok), true, ok);
+    for (const bad of ["12345", "1234567", "12345a", " 12345", "", null, undefined, 123456]) assert.equal(isValidPin(bad), false, String(bad));
+  });
+  it("randomPin makes zero-padded six-digit strings", () => {
+    for (let i = 0; i < 300; i++) assert.match(randomPin(), /^\d{6}$/);
+    assert.equal(randomPin((a) => { a[0] = 42; }), "000042");
+    assert.equal(randomPin((a) => { a[0] = 999_999; }), "999999");
+  });
+  it("randomPin rejects values that would bias the result", () => {
+    const limit = Math.floor(0x100000000 / 1_000_000) * 1_000_000;
+    const queue = [0xffffffff, limit, 7];
+    assert.equal(randomPin((a) => { a[0] = queue.shift(); }), "000007");
+    assert.equal(queue.length, 0, "both out-of-range draws were discarded");
+  });
+  it("randomPin is roughly uniform across the digits", () => {
+    const counts = Array(10).fill(0);
+    for (let i = 0; i < 3000; i++) for (const d of randomPin()) counts[+d]++;
+    for (const c of counts) assert.ok(c > 1500 && c < 2100, `digit count ${c} out of range`);
+  });
+});
+
+describe("client: pin payloads", () => {
+  it("sends the pin on create, sets/changes it and removes it with null", async () => {
+    const f = fakeFetch(() => ({ status: 200, body: {} }));
+    const c = createClient({ base: "https://go.test", apiKey: "k", fetchImpl: f });
+    await c.create("https://a.com", "docs", "T", "123456");
+    assert.deepEqual(JSON.parse(f.calls[0].init.body), { url: "https://a.com", alias: "docs", title: "T", pin: "123456" });
+    await c.create("https://a.com");
+    assert.equal("pin" in JSON.parse(f.calls[1].init.body), false);
+    await c.update("docs", { pin: "654321" });
+    assert.deepEqual(JSON.parse(f.calls[2].init.body), { pin: "654321" });
+    await c.update("docs", { pin: null });
+    assert.deepEqual(JSON.parse(f.calls[3].init.body), { pin: null });
+  });
+  it("explains a server without PIN support", () => {
+    assert.match(describeError(new ApiError(503, "pin_unavailable", "x"), "b"), /PIN_SECRET/);
+    assert.equal(describeError(new ApiError(400, "invalid_pin", "pin must be exactly 6 digits"), "b"), "pin must be exactly 6 digits");
+  });
+});
+
+describe("lock filter and CSV", () => {
+  const links = [L("a", { locked: true }), L("b", { locked: false }), L("c")];
+  it("filters locked / unlocked / all", () => {
+    assert.deepEqual(filterByLock(links, "locked").map((l) => l.code), ["a"]);
+    assert.deepEqual(filterByLock(links, "unlocked").map((l) => l.code), ["b", "c"]);
+    assert.equal(filterByLock(links, "all").length, 3);
+  });
+  it("exports yes/no for locked and never a PIN", () => {
+    const rows = toCsv(links, "https://go.test").split("\r\n");
+    assert.match(rows[1], /^a,[^,]+,[^,]+,,yes,/);
+    assert.match(rows[2], /^b,[^,]+,[^,]+,,no,/);
+    assert.match(rows[3], /^c,[^,]+,[^,]+,,no,/);
+    assert.ok(!rows[0].split(",").includes("pin"), "there is no PIN column");
   });
 });
