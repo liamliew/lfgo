@@ -83,3 +83,13 @@ describe("release zip", () => {
     assert.ok(!covered("test/shared.test.js") && !covered(".github/workflows/release.yml") && !covered("package.json"));
   });
 });
+
+describe("popup layout guards", () => {
+  const css = readFileSync(new URL("popup.css", root), "utf8");
+  it("lets grid tracks shrink so a long URL cannot stretch the popup", () => {
+    // Regression: without minmax(0, 1fr) a very long address made the popup content
+    // thousands of pixels wide and the right edge (copy buttons) was clipped.
+    assert.match(css, /main\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+    assert.match(css, /\.recent-list\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  });
+});
