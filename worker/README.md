@@ -66,6 +66,32 @@ npx wrangler login
 5. Deploy: `npx wrangler deploy`. Do this before step 2's `secret put` on a
    fresh setup, and again after changing `ALLOWED_ORIGINS`.
 
+### Alternative: deploy from GitHub (Workers Builds)
+
+Instead of running Wrangler yourself, connect this repo and Cloudflare deploys
+on every push to the production branch.
+
+1. Cloudflare dashboard -> **Workers & Pages** -> **Create application** ->
+   **GitHub**; authorise the "Cloudflare Workers and Pages" app for this repo
+   only, then pick `liamliew/lfgo`.
+2. The Worker name must be **`lfgo`** (it must match `name` in
+   `wrangler.jsonc`, or the build fails).
+3. Build settings: **Root directory** `worker`; **Build command** empty;
+   **Deploy command** `npx wrangler deploy` (the default). Set the production
+   branch under Settings -> Build -> Branch control.
+4. **Save and Deploy.** The KV namespace is created on the first deploy; with
+   Git builds its id is only visible in the dashboard and is not written back
+   to the repo, so leave `wrangler.jsonc` as is.
+5. Add the secret under the Worker's **Settings -> Variables and Secrets**
+   (type *Secret*, name `API_KEY`). Do not use *Build variables and secrets*:
+   those are not available to the running Worker.
+6. After that, changing `ALLOWED_ORIGINS` or any code is just a commit and
+   push.
+
+Pushes to other branches run a preview build (`wrangler preview`) with its own
+settings; turn that off under Settings -> Build -> Branch control if you do not
+want it.
+
 Check it:
 
 ```sh
