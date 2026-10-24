@@ -1,10 +1,12 @@
 name: Release extension
 
-# Push a tag like extension-v0.1.0 to publish a release with a ready-to-install zip.
+# Publishes a GitHub release with a ready-to-install zip whenever the version in
+# manifest.json has no release yet. To release: bump "version" in manifest.json
+# and push this branch. Pushes that do not change the version do nothing.
 on:
   push:
-    tags:
-      - "extension-v*"
+    branches:
+      - claude/links-extension
 
 permissions:
   contents: write
@@ -19,32 +21,40 @@ jobs:
         with:
           node-version: 22
 
-      - name: Tag must match manifest version
+      - name: Read version and check for an existing release
+        id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          tag="${GITHUB_REF_NAME#extension-v}"
           ver="$(node -p "require('./manifest.json').version")"
-          if [ "$tag" != "$ver" ]; then
-            echo "Tag version ($tag) does not match manifest.json version ($ver)" >&2
-            exit 1
+          echo "ver=$ver" >> "$GITHUB_OUTPUT"
+          if gh release view "extension-v$ver" >/dev/null 2>&1; then
+            echo "Release extension-v$ver already exists; nothing to do."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Test
+        if: steps.v.outputs.publish == 'true'
         run: npm test
 
       - name: Build zip
+        if: steps.v.outputs.publish == 'true'
         run: |
-          ver="${GITHUB_REF_NAME#extension-v}"
-          zip -r "lfgo-extension-${ver}.zip" \
+          zip -r "lfgo-extension-${{ steps.v.outputs.ver }}.zip" \
             manifest.json background.js shared.js \
             popup.html popup.css popup.js \
             options.html options.css options.js \
             theme.css icons INSTALL.txt
 
       - name: Publish release
+        if: steps.v.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          ver="${GITHUB_REF_NAME#extension-v}"
-          gh release create "$GITHUB_REF_NAME" "lfgo-extension-${ver}.zip" \
-            --title "lfgo short links ${ver}" \
-            --notes "Download **lfgo-extension-${ver}.zip**, unzip it, then follow INSTALL.txt (Load unpacked in chrome://extensions). The extension needs the matching Worker deployed from branch claude/links-worker."
+          ver="${{ steps.v.outputs.ver }}"
+          gh release create "extension-v$ver" "lfgo-extension-$ver.zip" \
+            --target "$GITHUB_SHA" \
+            --title "lfgo short links $ver" \
+            --notes "Download **lfgo-extension-$ver.zip**, unzip it, then follow INSTALL.txt (Load unpacked in chrome://extensions). It needs the matching Worker deployed from branch claude/links-worker."

@@ -39,16 +39,11 @@ press the reload arrow on the extension's card.
 
 ## Publishing a release (maintainers)
 
-Bump `version` in `manifest.json`, commit, then push a matching tag:
-
-```sh
-git tag extension-v0.1.0
-git push origin extension-v0.1.0
-```
-
-The workflow in `.github/workflows/release.yml` checks the tag against the
-manifest version, runs the tests, zips only the files the browser needs, and
-creates the GitHub release with the zip attached.
+Bump `version` in `manifest.json`, commit and push this branch. The workflow in
+`.github/workflows/release.yml` sees that `extension-v<version>` has no release
+yet, runs the tests, zips only the files the browser needs, and creates the
+release (and its tag) with the zip attached. Pushes that don't change the
+version do nothing.
 
 ## How it works / notes
 
