@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>lfgo short links</title>
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Short link</h1>
+      <a id="open-options" href="#" class="muted">Options</a>
+    </header>
+
+    <p id="loading" class="muted">Creating your link…</p>
+
+    <section id="setup" hidden>
+      <p>Add your API key to get started.</p>
+      <button id="setup-btn" class="primary" type="button">Open options</button>
+    </section>
+
+    <section id="blocked" hidden>
+      <p id="blocked-text"></p>
+    </section>
+
+    <section id="ready" hidden>
+      <label for="alias" class="muted">Short link</label>
+      <div class="row link-row">
+        <span id="prefix" class="prefix"></span>
+        <input id="alias" type="text" spellcheck="false" autocomplete="off" autocapitalize="off" maxlength="32" aria-describedby="status">
+      </div>
+      <div class="row actions">
+        <button id="save" class="primary" type="button" disabled>Save</button>
+        <button id="copy" type="button">Copy</button>
+      </div>
+      <p id="status" class="msg" role="status" aria-live="polite"></p>
+      <p class="dest muted" title=""><span>Points to </span><span id="dest"></span></p>
+    </section>
+
+    <p id="error" class="msg err" role="alert" hidden></p>
+  </main>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

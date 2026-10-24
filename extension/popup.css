@@ -1,0 +1,20 @@
+body { width: 360px; }
+main { padding: 14px; }
+header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+header a { font-size: 12px; }
+section > p { margin: 0 0 10px; }
+.row { display: flex; gap: 8px; align-items: center; }
+.link-row { margin-top: 4px; }
+.prefix {
+  flex: none;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.link-row input { flex: 1; min-width: 0; font-weight: 600; }
+.actions { margin-top: 10px; }
+.actions button { flex: 1; }
+.dest { font-size: 12px; margin: 6px 0 0; display: flex; gap: 4px; min-width: 0; }
+.dest span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
