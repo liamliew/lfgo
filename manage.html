@@ -12,6 +12,8 @@
     <header class="top">
       <div class="brand"><img src="icons/icon48.png" alt=""><span>LFC Tools</span></div>
       <div class="top-actions">
+        <span id="who" class="muted who" hidden></span>
+        <button id="signout" class="btn ghost" type="button" hidden>Sign out</button>
         <button id="refresh" class="btn ghost" type="button"><span data-icon="refresh"></span>Refresh</button>
         <button id="settings" class="btn ghost" type="button"><span data-icon="settings"></span>Settings</button>
       </div>
@@ -63,6 +65,7 @@
     <div id="error" class="card error" role="alert" hidden>
       <p id="error-text"></p>
       <div class="error-actions">
+        <button id="error-google" class="btn google" type="button" hidden><span data-icon="google"></span>Sign in with Google</button>
         <button id="retry" class="btn" type="button">Try again</button>
         <button id="error-settings" class="btn" type="button">Open settings</button>
       </div>

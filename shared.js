@@ -73,7 +73,13 @@ export function describeError(err, base) {
   if (err.code === "network") {
     return `Could not reach ${base}. Check the domain and your connection. If this is a new setup, the extension's address must be listed in the Worker's ALLOWED_ORIGINS (see Options).`;
   }
-  if (err.status === 401) return "The API key was rejected. Check it in Options.";
+  if (err.code === "signed_out") return "You are signed out. Sign in again from Settings.";
+  if (err.code === "token_expired" || err.code === "invalid_token") return "Your sign-in expired or was rejected. Sign out and sign in again.";
+  if (err.code === "wrong_domain") return err.message || "Only @lfcrea.com Google accounts can use this.";
+  if (err.code === "wrong_provider") return "Sign in with your Google account.";
+  if (err.code === "sign_in_disabled") return "Google sign-in is not turned on at the server yet. Use the API key for now.";
+  if (err.code === "auth_unavailable") return "The sign-in service can't be reached right now. Try again in a moment.";
+  if (err.status === 401) return "The API key was rejected. Check it in Settings.";
   if (err.code === "alias_taken") return "That alias is already taken.";
   if (err.code === "pin_unavailable") {
     return "PIN locks are not set up on the server yet. Add the PIN_SECRET secret in Cloudflare (see the Worker README).";
@@ -82,14 +88,30 @@ export function describeError(err, base) {
   return err.message || `Request failed (${err.status}).`;
 }
 
-export function createClient({ base, apiKey, fetchImpl = (...a) => fetch(...a) }) {
+export function createClient({ base, apiKey, getToken, fetchImpl = (...a) => fetch(...a) }) {
+  // A signed-in session (getToken) wins; otherwise the API key; otherwise we are signed out.
+  async function authHeaders() {
+    let token = null;
+    if (getToken) {
+      try {
+        token = await getToken();
+      } catch {
+        throw new ApiError(0, "network", "Network error");
+      }
+    }
+    if (token) return { authorization: `Bearer ${token}` };
+    if (apiKey) return { "x-api-key": apiKey };
+    throw new ApiError(401, "signed_out", "You are signed out. Sign in again.");
+  }
+
   async function request(method, path, body) {
+    const auth = await authHeaders();
     let res;
     try {
       res = await fetchImpl(base + path, {
         method,
         headers: {
-          "x-api-key": apiKey,
+          ...auth,
           ...(body === undefined ? {} : { "content-type": "application/json" }),
         },
         body: body === undefined ? undefined : JSON.stringify(body),

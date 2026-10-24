@@ -10,3 +10,11 @@ h1 { font-size: 24px; margin-top: 6px; }
 code { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px; word-break: break-all; font-size: 13px; }
 .copy-row code { flex: 1; padding: 7px 9px; }
 .fine { font-size: 12px; }
+h2 { font-size: 14px; }
+.card h2 { margin: 0; }
+#account { gap: 10px; }
+.signed-in { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.signed-in p { margin: 0; word-break: break-all; }
+details summary { cursor: pointer; font-weight: 600; font-size: 13px; padding: 2px 0 8px; }
+details .field-group { margin-top: 2px; }
+.copy-row + p { margin-top: 6px; }

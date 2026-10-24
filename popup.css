@@ -51,3 +51,5 @@ body:not(.loading) .qr-frame::after { display: none; }
 .pin-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 10px; }
 .pin-actions { display: flex; gap: 8px; }
 .loading #pin-open { pointer-events: none; opacity: 0.5; }
+#setup-msg:empty { display: none; }
+#setup .msg { margin: 0; min-height: 0; }

@@ -43,7 +43,7 @@ jobs:
         if: steps.v.outputs.publish == 'true'
         run: |
           zip -r "lfc-tools-extension-${{ steps.v.outputs.ver }}.zip" \
-            manifest.json background.js shared.js qr.js ui.js \
+            manifest.json background.js shared.js auth.js config.js qr.js ui.js \
             popup.html popup.css popup.js \
             manage.html manage.css manage.js \
             options.html options.css options.js \

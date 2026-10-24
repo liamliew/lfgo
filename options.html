@@ -11,7 +11,21 @@
   <main>
     <div class="brand"><img src="icons/icon48.png" alt=""><span>LFC Tools</span></div>
     <h1>Settings</h1>
-    <p class="muted lead">Where your shortener lives and the key that lets this extension use it.</p>
+    <p class="muted lead">Your account, and where your shortener lives.</p>
+
+    <section id="account" class="card">
+      <h2>Account</h2>
+      <div id="account-out" hidden>
+        <p id="account-out-text" class="muted"></p>
+        <button id="google-btn" class="btn google" type="button"><span data-icon="google"></span>Sign in with Google</button>
+      </div>
+      <div id="account-in" class="signed-in" hidden>
+        <p>Signed in as <strong id="who"></strong></p>
+        <button id="signout" class="btn" type="button">Sign out</button>
+      </div>
+      <p id="account-off" class="muted" hidden>Google sign-in isn't turned on in this version yet. Use an API key below.</p>
+      <p id="account-msg" class="msg" role="status" aria-live="polite"></p>
+    </section>
 
     <form id="form" class="card" novalidate>
       <div class="field-group">
@@ -19,16 +33,19 @@
         <input id="base" type="text" spellcheck="false" autocomplete="off" placeholder="go.lfcrea.com">
       </div>
 
-      <div class="field-group">
-        <label for="key">API key</label>
-        <input id="key" type="password" spellcheck="false" autocomplete="off">
-        <p id="key-hint" class="hint muted"></p>
-      </div>
+      <details id="advanced" open>
+        <summary>API key <span class="muted">(admin or fallback)</span></summary>
+        <div class="field-group">
+          <label for="key" class="sr-only">API key</label>
+          <input id="key" type="password" spellcheck="false" autocomplete="off">
+          <p id="key-hint" class="hint muted"></p>
+          <button id="forget" class="btn ghost small" type="button" hidden>Remove saved key</button>
+        </div>
+      </details>
 
       <div class="actions">
         <button id="save" class="btn primary" type="submit">Save</button>
         <button id="test" class="btn" type="button">Test connection</button>
-        <button id="forget" class="btn ghost" type="button" hidden>Remove saved key</button>
       </div>
       <p id="msg" class="msg" role="status" aria-live="polite"></p>
     </form>
@@ -36,12 +53,14 @@
     <p class="links"><button id="open-manage" class="btn" type="button">Manage all links</button></p>
 
     <section class="origin">
-      <h2>Allow this extension on the server</h2>
-      <p class="muted">Add this address to <code>ALLOWED_ORIGINS</code> in the Worker's <code>wrangler.jsonc</code> and redeploy. Without it the browser blocks the extension's requests.</p>
+      <h2>Server setup</h2>
+      <p class="muted">Add this address to <code>ALLOWED_ORIGINS</code> in the Worker's <code>wrangler.jsonc</code> and redeploy. Without it the browser blocks this extension's requests.</p>
       <div class="copy-row"><code id="origin"></code><button id="copy-origin" class="btn small" type="button">Copy</button></div>
+      <p class="muted">For Google sign-in, add this to the LF ID Supabase project under Authentication, URL Configuration, Redirect URLs.</p>
+      <div class="copy-row"><code id="redirect-url"></code><button id="copy-redirect" class="btn small" type="button">Copy</button></div>
     </section>
 
-    <p class="muted fine">The key is kept in this browser's local extension storage only. It is not synced to other devices.</p>
+    <p class="muted fine">Your sign-in and API key are kept in this browser's local extension storage only. They are not synced to other devices.</p>
   </main>
   <script type="module" src="options.js"></script>
 </body>

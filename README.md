@@ -5,8 +5,8 @@ page (or reuses the one that already exists), shows it in an editable field,
 generates a QR code for it, and copies the link. Open the management page to
 see, search, edit and delete every link.
 
-Manifest V3. Permissions: `activeTab` and `storage` only (no host
-permissions, no `clipboardWrite`). This branch holds only the extension; the
+Manifest V3. Permissions: `activeTab`, `storage` and `identity` (Google sign-in);
+no host permissions and no `clipboardWrite`. This branch holds only the extension; the
 Worker it talks to lives on branch `claude/links-worker`.
 
 ## Easy install
@@ -18,8 +18,10 @@ Worker it talks to lives on branch `claude/links-worker`.
 2. Unzip it somewhere permanent.
 3. Open `chrome://extensions`, switch on **Developer mode**, click **Load
    unpacked**, and pick the unzipped folder (the one containing `manifest.json`).
-4. The settings page opens automatically. Paste your **API key**, click
-   **Save**, then **Test connection**. The domain is already `go.lfcrea.com`.
+4. The settings page opens automatically. Click **Sign in with Google** and
+   choose your `@lfcrea.com` account. (Until Google sign-in is switched on for
+   your build, paste the **API key** instead, click **Save**, then **Test
+   connection**.) The domain is already `go.lfcrea.com`.
 5. Pin the icon and click it on any page.
 
 Chrome does not allow one-click installs of extensions from outside the Chrome
@@ -70,6 +72,31 @@ press the reload arrow on the extension's card.
 
 Fonts: Inter, bundled in `fonts/` (SIL Open Font License). QR codes: the `uqr`
 encoder, bundled in `vendor/` (MIT).
+
+## Google sign-in (LF ID)
+
+Team members sign in with their `@lfcrea.com` Google account instead of sharing an
+API key.
+
+- **Where to sign in:** the popup's "Sign in with Google" button opens the settings
+  tab and starts the flow there. It can't run inside the popup, because Chrome
+  closes a popup as soon as another window (Google's) takes focus, which would abort
+  the sign-in. The settings page shows who is signed in and has Sign out.
+- **How it works:** the extension sends you to the "LF ID" Supabase project's Google
+  login using PKCE (`chrome.identity.launchWebAuthFlow`), gets a session back, and
+  sends its access token to the Worker (`Authorization: Bearer ...`). The Worker
+  checks the token's signature and that the account is a verified Google account
+  on `lfcrea.com`. Tokens are refreshed automatically; refreshes are serialised
+  across the popup and manage page because refresh tokens are single use.
+- **Storage:** the session lives in `chrome.storage.local`, not `storage.sync`.
+- **API key:** still works. If you are signed in the session is used; signed out,
+  the saved key is the fallback. Keep it for admin / scripts.
+- **Needs setup first:** the Supabase project, a Google OAuth client and the Worker's
+  `SUPABASE_URL` (see `worker/LF-ID-SETUP.md` on branch `claude/links-worker`), then
+  the project's URL and publishable key go in `config.js`. They are public values;
+  never put a secret key there. Until `config.js` is filled in, the Google button is
+  hidden and the extension behaves as before.
+- **Safari:** `chrome.identity` may not be available there; Phase 4 will check.
 
 ## PIN locks: what you need to know
 
@@ -125,7 +152,7 @@ extension loads.
 ## Tests
 
 ```sh
-npm test    # validation, API client, PIN helpers, list helpers, CSV, QR, manifest and release-zip checks
+npm test    # validation, API client, sign-in (PKCE, refresh, sign-out), PIN helpers, list helpers, CSV, QR, manifest and release-zip checks
 ```
 
 The whole UI was also driven in a real Chromium against a local Worker
@@ -133,4 +160,7 @@ The whole UI was also driven in a real Chromium against a local Worker
 short URL (popup canvas, PNG and SVG downloads, manage dialog), rename, taken
 alias, reuse, recent links, unsupported pages, search, sort, create, edit,
 single and bulk delete, CSV export, the no-key states, and PIN locks end to end
-(locking, changing, removing, the visitor's PIN page and redirect, filters).
+(locking, changing, removing, the visitor's PIN page and redirect, filters), and Google
+sign-in against a local stand-in for Supabase Auth (PKCE verified, real signed tokens
+checked by the real Worker, refresh, sign-out, rejected accounts). Google's own consent
+screen cannot be automated, so that one step is tested by hand.

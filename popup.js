@@ -1,7 +1,7 @@
 import {
-  ApiError, aliasProblem, checkTabUrl, createClient, describeError, hostOf, isValidPin, loadSettings, randomPin,
-  shortLabel, sortLinks,
+  ApiError, aliasProblem, checkTabUrl, describeError, hostOf, isValidPin, randomPin, shortLabel, sortLinks,
 } from "./shared.js";
+import { connect } from "./auth.js";
 import { drawQr, qrPngBlob, qrSvgBlob } from "./qr.js";
 import { copyText, downloadBlob, flashDone, mountIcons, slug } from "./ui.js";
 
@@ -88,6 +88,8 @@ async function generate() {
     say(`${existing ? "Existing link reused" : "Link created"}${copied ? " and copied" : ""}.`, copied ? "ok" : "");
     loadRecent();
   } catch (err) {
+    // The session ended (refresh rejected or signed out elsewhere): go back to the sign-in prompt.
+    if (err?.code === "signed_out") return start();
     $("failed-text").textContent = describeError(err, base);
     showOnly("failed");
   }
@@ -205,7 +207,10 @@ async function loadRecent() {
   }
 }
 
-async function init() {
+let bound = false;
+function bindOnce() {
+  if (bound) return;
+  bound = true;
   mountIcons();
   const openManage = (e) => {
     e?.preventDefault();
@@ -215,13 +220,30 @@ async function init() {
   $("manage").addEventListener("click", openManage);
   $("see-all").addEventListener("click", openManage);
   $("settings").addEventListener("click", () => chrome.runtime.openOptionsPage());
+  // The Google window would close this popup (popups close when they lose focus) and
+  // abort the sign-in, so signing in runs in the settings tab instead.
+  $("google-btn").addEventListener("click", () => {
+    chrome.tabs.create({ url: `${chrome.runtime.getURL("options.html")}#signin` });
+    window.close();
+  });
   $("setup-btn").addEventListener("click", () => chrome.runtime.openOptionsPage());
   $("retry").addEventListener("click", generate);
+}
 
-  const settings = await loadSettings();
-  base = settings.base;
-  if (!settings.apiKey) return showOnly("setup");
-  client = createClient({ base, apiKey: settings.apiKey });
+/** (Re)evaluates how we are connected and shows the right screen. Safe to call again. */
+async function start() {
+  const conn = await connect();
+  base = conn.base;
+  if (!conn.client) {
+    $("setup-text").textContent = conn.authEnabled
+      ? `Use your @${conn.domain} Google account.`
+      : "Add your API key in settings to start creating links.";
+    $("google-btn").hidden = !conn.authEnabled;
+    $("setup-btn").textContent = conn.authEnabled ? "Use an API key instead" : "Open settings";
+    $("setup-btn").className = conn.authEnabled ? "link-btn" : "btn primary";
+    return showOnly("setup");
+  }
+  client = conn.client;
 
   tab = await activeTab();
   const check = checkTabUrl(tab.url);
@@ -282,6 +304,11 @@ $("qr-svg").addEventListener("click", () => {
   downloadBlob(qrSvgBlob(shortUrl()), `lfc-tools-${slug(currentCode)}-qr.svg`);
   say("QR code saved as SVG.", "ok");
 });
+
+async function init() {
+  bindOnce();
+  await start();
+}
 
 init().catch((err) => {
   $("failed-text").textContent = describeError(err instanceof ApiError ? err : new Error("x"), base);

@@ -18,9 +18,11 @@
     </header>
 
     <section id="setup" class="card" hidden>
-      <h2>Connect LFC Tools</h2>
-      <p class="muted">Add your API key in settings to start creating links.</p>
-      <button id="setup-btn" class="btn primary" type="button">Open settings</button>
+      <h2 id="setup-title">Sign in to LFC Tools</h2>
+      <p id="setup-text" class="muted"></p>
+      <button id="google-btn" class="btn google" type="button"><span data-icon="google"></span>Sign in with Google</button>
+      <p id="setup-msg" class="msg" role="status" aria-live="polite"></p>
+      <button id="setup-btn" class="link-btn" type="button">Use an API key instead</button>
     </section>
 
     <section id="blocked" class="card" hidden>

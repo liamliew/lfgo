@@ -53,3 +53,7 @@ tbody tr.selected { background: var(--accent-soft); }
 .lock-badge svg { width: 14px; height: 14px; }
 #pin-dialog .dialog-actions.between { width: 100%; }
 .icon-btn.locked { color: var(--accent); }
+.top-actions { align-items: center; }
+.who { font-size: 13px; margin-right: 6px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Not connected: only the sign-in prompt is useful. */
+body.disconnected .create, body.disconnected .toolbar, body.disconnected .table-wrap { display: none; }

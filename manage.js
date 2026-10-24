@@ -1,5 +1,6 @@
+import { AuthError, connect, signInWithGoogle, signOut } from "./auth.js";
 import {
-  aliasProblem, checkTabUrl, createClient, describeError, filterByLock, filterLinks, hostOf, isValidPin, loadSettings,
+  aliasProblem, checkTabUrl, describeError, filterByLock, filterLinks, hostOf, isValidPin,
   randomPin, relativeTime, shortLabel, sortLinks, toCsv,
 } from "./shared.js";
 import { drawQr, qrPngBlob, qrSvgBlob } from "./qr.js";
@@ -124,6 +125,7 @@ async function load() {
     for (const code of [...selected]) if (!links.some((l) => l.code === code)) selected.delete(code);
     loadState = "ready";
   } catch (err) {
+    if (err?.code === "signed_out") return location.reload(); // shows the sign-in prompt
     loadState = "error";
     $("error-text").textContent = describeError(err, base);
     $("error").hidden = false;
@@ -410,18 +412,42 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+$("error-google").addEventListener("click", async () => {
+  $("error-google").disabled = true;
+  try {
+    await signInWithGoogle();
+    location.reload();
+  } catch (err) {
+    $("error-text").textContent = err instanceof AuthError ? err.message : "Sign-in failed. Try again.";
+    $("error-google").disabled = false;
+  }
+});
+$("signout").addEventListener("click", async () => {
+  await signOut();
+  location.reload();
+});
+
 (async function init() {
   mountIcons();
-  const settings = await loadSettings();
-  base = settings.base;
-  if (!settings.apiKey) {
+  const conn = await connect();
+  base = conn.base;
+  if (!conn.client) {
     loadState = "error";
-    $("error-text").textContent = "Add your API key in settings to manage your links.";
+    $("error-text").textContent = conn.authEnabled
+      ? `Sign in with your @${conn.domain} Google account to manage your links.`
+      : "Add your API key in settings to manage your links.";
+    $("error-google").hidden = !conn.authEnabled;
+    $("error-settings").textContent = conn.authEnabled ? "Use an API key instead" : "Open settings";
     $("error").hidden = false;
     $("retry").hidden = true;
-    render();
+    document.body.classList.add("disconnected");
     return;
   }
-  client = createClient({ base, apiKey: settings.apiKey });
+  client = conn.client;
+  if (conn.email) {
+    $("who").textContent = conn.email;
+    $("who").hidden = false;
+    $("signout").hidden = false;
+  }
   await load();
 })();
