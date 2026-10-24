@@ -1,0 +1,13 @@
+lfgo short links - install (Chrome, Edge, Brave)
+
+1. Unzip this file somewhere permanent (do not delete the folder afterwards,
+   the browser loads the extension from it).
+2. Open chrome://extensions and switch on "Developer mode" (top right).
+3. Click "Load unpacked" and choose the unzipped folder (the one that
+   contains manifest.json).
+4. The settings page opens by itself. Paste your API key and click Save, then
+   "Test connection". The short domain is already go.lfcrea.com.
+5. Pin the icon (puzzle-piece menu) and click it on any web page.
+
+To update: download the newer zip, unzip over the old folder (or into a new one)
+and click the reload arrow on the extension card at chrome://extensions.

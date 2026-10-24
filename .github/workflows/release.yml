@@ -1,0 +1,50 @@
+name: Release extension
+
+# Push a tag like extension-v0.1.0 to publish a release with a ready-to-install zip.
+on:
+  push:
+    tags:
+      - "extension-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Tag must match manifest version
+        run: |
+          tag="${GITHUB_REF_NAME#extension-v}"
+          ver="$(node -p "require('./manifest.json').version")"
+          if [ "$tag" != "$ver" ]; then
+            echo "Tag version ($tag) does not match manifest.json version ($ver)" >&2
+            exit 1
+          fi
+
+      - name: Test
+        run: npm test
+
+      - name: Build zip
+        run: |
+          ver="${GITHUB_REF_NAME#extension-v}"
+          zip -r "lfgo-extension-${ver}.zip" \
+            manifest.json background.js shared.js \
+            popup.html popup.css popup.js \
+            options.html options.css options.js \
+            theme.css icons INSTALL.txt
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ver="${GITHUB_REF_NAME#extension-v}"
+          gh release create "$GITHUB_REF_NAME" "lfgo-extension-${ver}.zip" \
+            --title "lfgo short links ${ver}" \
+            --notes "Download **lfgo-extension-${ver}.zip**, unzip it, then follow INSTALL.txt (Load unpacked in chrome://extensions). The extension needs the matching Worker deployed from branch claude/links-worker."
